@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/ScreenCap/ScreenCap.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ScreenCap.Tests/ScreenCap.Tests.csproj" />
+  </Folder>
 </Solution>

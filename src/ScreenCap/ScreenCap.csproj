@@ -26,4 +26,8 @@
     <Resource Include="Assets\ScreenCap.ico" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ScreenCap.Tests" />
+  </ItemGroup>
+
 </Project>

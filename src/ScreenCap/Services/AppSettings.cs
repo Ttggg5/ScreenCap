@@ -61,7 +61,8 @@ internal readonly record struct Hotkey(ModifierKeys Modifiers, Key Key)
 /// <summary>User preferences, stored under HKCU\Software\ScreenCap.</summary>
 internal static class AppSettings
 {
-    private const string KeyPath = @"Software\ScreenCap";
+    /// <summary>Registry key under HKCU; tests point it elsewhere so real settings are untouched.</summary>
+    internal static string KeyPath { get; set; } = @"Software\ScreenCap";
 
     public static readonly Hotkey DefaultCaptureHotkey = new(ModifierKeys.None, Key.F1);
     public static readonly Hotkey DefaultRecordHotkey = new(ModifierKeys.Shift, Key.F1);
