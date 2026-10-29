@@ -321,6 +321,8 @@ internal sealed class OverlayWindow : Window
         base.OnMouseLeftButtonDown(e);
         if (e.Handled || IsOverChrome())
             return;
+        if (Keyboard.FocusedElement is TextBox field && field != _textBox)
+            FocusOverlay(); // leave the palette's HEX box so overlay shortcuts work again
 
         var p = MousePoint(e);
         if (_textBox != null)
@@ -553,6 +555,17 @@ internal sealed class OverlayWindow : Window
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
+        // Typing in a toolbar field (the palette's HEX box); Esc returns to the overlay.
+        if (Keyboard.FocusedElement is TextBox field && field != _textBox)
+        {
+            if (e.Key == Key.Escape)
+            {
+                FocusOverlay();
+                e.Handled = true;
+            }
+            return;
+        }
+
         if (_textBox != null)
         {
             if (e.Key == Key.Escape || (e.Key == Key.Enter && ctrl))
@@ -630,6 +643,16 @@ internal sealed class OverlayWindow : Window
                 e.Handled = false;
                 break;
         }
+    }
+
+    /// <summary>
+    /// Moves keyboard focus back to the overlay. Focusing a window restores its remembered focused
+    /// element, so that is reset first.
+    /// </summary>
+    private void FocusOverlay()
+    {
+        FocusManager.SetFocusedElement(this, this);
+        Keyboard.Focus(this);
     }
 
     private void Nudge(int dx, int dy, bool resize)

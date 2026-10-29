@@ -62,8 +62,8 @@
         </Style>
 
         <Style x:Key="Swatch" TargetType="ToggleButton">
-            <Setter Property="Width" Value="20" />
-            <Setter Property="Height" Value="20" />
+            <Setter Property="Width" Value="18" />
+            <Setter Property="Height" Value="18" />
             <Setter Property="Margin" Value="2,0" />
             <Setter Property="Focusable" Value="False" />
             <Setter Property="Template">
@@ -162,17 +162,39 @@
                 </StackPanel>
                 <Rectangle Style="{StaticResource Divider}" Margin="4,2" />
                 <StackPanel x:Name="Swatches" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FB8C00" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FDD835" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#43A047" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#1E88E5" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#8E24AA" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#000000" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FFFFFF" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" ToolTip="紅" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#EC407A" ToolTip="粉紅" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#FB8C00" ToolTip="橘" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#FDD835" ToolTip="黃" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#7CB342" ToolTip="黃綠" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#43A047" ToolTip="綠" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#00ACC1" ToolTip="青" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#1E88E5" ToolTip="藍" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#3949AB" ToolTip="靛" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#8E24AA" ToolTip="紫" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#6D4C41" ToolTip="棕" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#9E9E9E" ToolTip="灰" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#000000" ToolTip="黑" Click="OnColorClick" />
+                    <ToggleButton Style="{StaticResource Swatch}" Background="#FFFFFF" ToolTip="白" Click="OnColorClick" />
                 </StackPanel>
+                <ToggleButton x:Name="CustomSwatch" Style="{StaticResource Swatch}" Visibility="Collapsed" ToolTip="自訂顏色" Click="OnColorClick" />
+                <ToggleButton x:Name="PaletteToggle" Style="{StaticResource SizeDot}" ToolTip="調色盤" Margin="2,0,0,0" Click="OnPaletteClick">
+                    <Ellipse Width="16" Height="16" Stroke="#55000000" StrokeThickness="1">
+                        <Ellipse.Fill>
+                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                <GradientStop Color="#E53935" Offset="0" />
+                                <GradientStop Color="#FDD835" Offset="0.25" />
+                                <GradientStop Color="#43A047" Offset="0.5" />
+                                <GradientStop Color="#1E88E5" Offset="0.75" />
+                                <GradientStop Color="#8E24AA" Offset="1" />
+                            </LinearGradientBrush>
+                        </Ellipse.Fill>
+                    </Ellipse>
+                </ToggleButton>
                 </StackPanel>
             </StackPanel>
+
+            <ContentControl x:Name="PaletteHost" Visibility="Collapsed" Focusable="False" />
         </StackPanel>
     </Border>
 </UserControl>

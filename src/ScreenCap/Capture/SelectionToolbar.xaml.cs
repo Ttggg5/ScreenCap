@@ -24,6 +24,7 @@ internal partial class SelectionToolbar : UserControl
 {
     private readonly Dictionary<ToggleButton, ToolKind> _tools;
     private readonly ToggleButton[] _sizes;
+    private readonly ColorPalette _palette = new();
 
     public SelectionToolbar()
     {
@@ -43,6 +44,12 @@ internal partial class SelectionToolbar : UserControl
         SizeMedium.IsChecked = true;
         ((ToggleButton)Swatches.Children[0]).IsChecked = true;
         SetMosaicStrength(Annotations.MosaicAnnotation.DefaultStrength);
+        PaletteHost.Content = _palette;
+        _palette.ColorPicked += color =>
+        {
+            ShowColor(color);
+            ColorChanged?.Invoke(color);
+        };
         RecordButton.ToolTip = $"錄製螢幕（{RecordingSession.DisplayName(RecordingSession.Format)}）";
     }
 
@@ -103,7 +110,33 @@ internal partial class SelectionToolbar : UserControl
         RecordingSession.Format = format;
     }
 
-    public Color SelectedColor => ((SolidColorBrush)Swatches.Children.OfType<ToggleButton>().First(b => b.IsChecked == true).Background).Color;
+    /// <summary>The preset swatches plus the custom-color swatch.</summary>
+    private IEnumerable<ToggleButton> ColorButtons => Swatches.Children.OfType<ToggleButton>().Append(CustomSwatch);
+
+    public Color SelectedColor =>
+        ColorButtons.FirstOrDefault(b => b.IsChecked == true) is { Background: SolidColorBrush brush } ? brush.Color : Colors.Red;
+
+    /// <summary>Checks the preset matching <paramref name="color"/>, or shows it in the custom swatch.</summary>
+    private void ShowColor(Color color)
+    {
+        var target = Swatches.Children.OfType<ToggleButton>().FirstOrDefault(b => ((SolidColorBrush)b.Background).Color == color);
+        if (target == null)
+        {
+            CustomSwatch.Background = new SolidColorBrush(color);
+            CustomSwatch.ToolTip = $"自訂顏色 {ColorPalette.ToHex(color)}";
+            CustomSwatch.Visibility = Visibility.Visible;
+            target = CustomSwatch;
+        }
+        foreach (var button in ColorButtons)
+            button.IsChecked = button == target;
+    }
+
+    private void OnPaletteClick(object sender, RoutedEventArgs e)
+    {
+        if (PaletteToggle.IsChecked == true)
+            _palette.SetColor(SelectedColor);
+        PaletteHost.Visibility = PaletteToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     public double SelectedSize => double.Parse((string)_sizes.First(b => b.IsChecked == true).Tag);
 
@@ -112,6 +145,7 @@ internal partial class SelectionToolbar : UserControl
         foreach (var button in _tools.Keys)
             button.IsChecked = false;
         OptionsRow.Visibility = Visibility.Collapsed;
+        PaletteHost.Visibility = Visibility.Collapsed;
     }
 
     public int MosaicStrength => (int)MosaicSlider.Value;
@@ -126,6 +160,7 @@ internal partial class SelectionToolbar : UserControl
         MosaicOptions.Visibility = mosaic ? Visibility.Visible : Visibility.Collapsed;
         StrokeOptions.Visibility = mosaic ? Visibility.Collapsed : Visibility.Visible;
         TextOptions.Visibility = text && !mosaic ? Visibility.Visible : Visibility.Collapsed;
+        PaletteHost.Visibility = visible && !mosaic && PaletteToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void SetMosaicStrength(int strength)
@@ -153,12 +188,8 @@ internal partial class SelectionToolbar : UserControl
     /// <summary>Reflects an existing annotation's style in the size and color pickers.</summary>
     public void SetStyle(Color color, double size)
     {
-        var swatches = Swatches.Children.OfType<ToggleButton>().ToList();
-        if (swatches.FirstOrDefault(b => ((SolidColorBrush)b.Background).Color == color) is { } swatch)
-        {
-            foreach (var b in swatches)
-                b.IsChecked = b == swatch;
-        }
+        ShowColor(color);
+        _palette.SetColor(color);
         if (_sizes.FirstOrDefault(b => double.Parse((string)b.Tag) == size) is { } sizeButton)
         {
             foreach (var b in _sizes)
@@ -188,8 +219,9 @@ internal partial class SelectionToolbar : UserControl
 
     private void OnColorClick(object sender, RoutedEventArgs e)
     {
-        foreach (var button in Swatches.Children.OfType<ToggleButton>())
+        foreach (var button in ColorButtons)
             button.IsChecked = button == sender;
+        _palette.SetColor(SelectedColor);
         ColorChanged?.Invoke(SelectedColor);
     }
 

@@ -1,5 +1,7 @@
 using System.IO;
+using System.Globalization;
 using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 using ScreenCap.Recording;
 
@@ -96,6 +98,16 @@ internal static class AppSettings
     {
         get => Enum.TryParse(Get("RecordingFormat"), out RecordingFormat format) ? format : RecordingFormat.Gif;
         set => Set("RecordingFormat", value.ToString());
+    }
+
+    /// <summary>Colors picked from the custom palette, most recent first.</summary>
+    public static IReadOnlyList<Color> RecentColors
+    {
+        get => (Get("RecentColors") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => int.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int rgb) ? Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb) : (Color?)null)
+            .OfType<Color>()
+            .ToList();
+        set => Set("RecentColors", string.Join(",", value.Select(c => $"{c.R:X2}{c.G:X2}{c.B:X2}")));
     }
 
     private static string? Get(string name)
