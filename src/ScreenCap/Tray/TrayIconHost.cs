@@ -1,9 +1,7 @@
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using ScreenCap.Help;
 using ScreenCap.Services;
 using Forms = System.Windows.Forms;
-using static ScreenCap.Native.NativeMethods;
 
 namespace ScreenCap.Tray;
 
@@ -56,44 +54,12 @@ internal sealed class TrayIconHost : IDisposable
     public void Notify(string title, string message) =>
         _notifyIcon.ShowBalloonTip(3000, title, message, Forms.ToolTipIcon.Info);
 
+    /// <summary>Loads the app icon at the tray's small-icon size so it isn't downscaled blurrily.</summary>
     private static Icon CreateIcon()
     {
-        using var bitmap = new Bitmap(32, 32);
-        using (var g = Graphics.FromImage(bitmap))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-            using var background = new SolidBrush(Color.FromArgb(0x1A, 0x9F, 0xFF));
-            using var path = RoundedRect(new Rectangle(1, 1, 30, 30), 7);
-            g.FillPath(background, path);
-
-            // Corner brackets of a selection frame
-            using var pen = new Pen(Color.White, 3) { StartCap = LineCap.Round, EndCap = LineCap.Round };
-            g.DrawLines(pen, new Point[] { new(8, 14), new(8, 8), new(14, 8) });
-            g.DrawLines(pen, new Point[] { new(18, 24), new(24, 24), new(24, 18) });
-        }
-
-        IntPtr handle = bitmap.GetHicon();
-        try
-        {
-            return (Icon)Icon.FromHandle(handle).Clone();
-        }
-        finally
-        {
-            DestroyIcon(handle);
-        }
-    }
-
-    private static GraphicsPath RoundedRect(Rectangle r, int radius)
-    {
-        int d = radius * 2;
-        var path = new GraphicsPath();
-        path.AddArc(r.X, r.Y, d, d, 180, 90);
-        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-        path.CloseFigure();
-        return path;
+        var resource = System.Windows.Application.GetResourceStream(new Uri("pack://application:,,,/Assets/ScreenCap.ico"));
+        using var stream = resource!.Stream;
+        return new Icon(stream, Forms.SystemInformation.SmallIconSize);
     }
 
     public void Dispose()

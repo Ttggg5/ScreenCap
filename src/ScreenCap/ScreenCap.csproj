@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\ScreenCap.ico</ApplicationIcon>
     <RootNamespace>ScreenCap</RootNamespace>
     <AssemblyName>ScreenCap</AssemblyName>
     <!-- DPI awareness must stay in app.manifest for WPF; WinForms is only used for the tray icon. -->
@@ -18,6 +19,10 @@
     <!-- WinForms is only used for the tray icon; keep its namespaces out of global scope to avoid WPF name clashes. -->
     <Using Remove="System.Windows.Forms" />
     <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\ScreenCap.ico" />
   </ItemGroup>
 
 </Project>

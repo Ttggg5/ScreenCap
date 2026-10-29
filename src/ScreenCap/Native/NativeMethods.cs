@@ -75,7 +75,6 @@ internal static class NativeMethods
         ref BITMAPINFOHEADER bmi, uint usage);
 
     [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
-    [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr hIcon);
 
     // ---- Hotkeys ----
     [DllImport("user32.dll", SetLastError = true)]
