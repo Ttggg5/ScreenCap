@@ -16,12 +16,26 @@ internal static class ImageExportService
             FileName = $"ScreenCap_{DateTime.Now:yyyyMMdd_HHmmss}",
             DefaultExt = ".png",
             Filter = "PNG 圖片 (*.png)|*.png|JPEG 圖片 (*.jpg)|*.jpg|BMP 圖片 (*.bmp)|*.bmp",
-            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
+            InitialDirectory = AppSettings.SaveFolder,
         };
-        if (dialog.ShowDialog(owner) != true)
-            return false;
+        return dialog.ShowDialog(owner) == true && Write(image, dialog.FileName);
+    }
 
-        BitmapEncoder encoder = Path.GetExtension(dialog.FileName).ToLowerInvariant() switch
+    /// <summary>Saves a PNG straight to the configured folder without asking.</summary>
+    /// <returns>The saved path, or null if it failed.</returns>
+    public static string? QuickSave(BitmapSource image)
+    {
+        string folder = AppSettings.SaveFolder;
+        string name = $"ScreenCap_{DateTime.Now:yyyyMMdd_HHmmss}";
+        string path = Path.Combine(folder, name + ".png");
+        for (int i = 2; File.Exists(path); i++)
+            path = Path.Combine(folder, $"{name}_{i}.png");
+        return Write(image, path) ? path : null;
+    }
+
+    private static bool Write(BitmapSource image, string path)
+    {
+        BitmapEncoder encoder = Path.GetExtension(path).ToLowerInvariant() switch
         {
             ".jpg" or ".jpeg" => new JpegBitmapEncoder { QualityLevel = 95 },
             ".bmp" => new BmpBitmapEncoder(),
@@ -31,7 +45,7 @@ internal static class ImageExportService
 
         try
         {
-            using var stream = File.Create(dialog.FileName);
+            using var stream = File.Create(path);
             encoder.Save(stream);
             return true;
         }
@@ -52,7 +66,7 @@ internal static class ImageExportService
             FileName = $"ScreenCap_{DateTime.Now:yyyyMMdd_HHmmss}",
             DefaultExt = mp4 ? ".mp4" : ".gif",
             Filter = mp4 ? "MP4 影片 (*.mp4)|*.mp4" : "GIF 動畫 (*.gif)|*.gif",
-            InitialDirectory = Environment.GetFolderPath(mp4 ? Environment.SpecialFolder.MyVideos : Environment.SpecialFolder.MyPictures),
+            InitialDirectory = mp4 ? Environment.GetFolderPath(Environment.SpecialFolder.MyVideos) : AppSettings.SaveFolder,
         };
         if (dialog.ShowDialog() != true)
             return null;

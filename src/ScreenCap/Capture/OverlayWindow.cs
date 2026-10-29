@@ -20,6 +20,19 @@ internal enum OverlayAction
     Save,
     Pin,
     Record,
+    QuickSave,
+}
+
+internal enum OverlayMode
+{
+    /// <summary>Normal screenshot with annotation tools.</summary>
+    Capture,
+
+    /// <summary>Selecting a region to record rather than to screenshot.</summary>
+    Record,
+
+    /// <summary>Annotating an existing pin; the selection starts on the pinned image.</summary>
+    EditPin,
 }
 
 /// <param name="Width">Selection size in physical pixels (used for recording).</param>
@@ -83,11 +96,16 @@ internal sealed class OverlayWindow : Window
     private double _textSize;
     private bool _textReplacing;     // re-editing an existing text annotation
 
-    private readonly bool _recordMode; // selecting a region to record rather than to screenshot
+    private bool _textBold;
+    private bool _textBackground;
 
-    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, bool recordMode = false)
+    private int _historyIndex = -1; // position while stepping through earlier capture regions with , and .
+
+    private readonly OverlayMode _mode;
+
+    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, OverlayMode mode = OverlayMode.Capture, Rect? initialSelection = null)
     {
-        _recordMode = recordMode;
+        _mode = mode;
         _snap = snap;
         _detector = detector;
         _color = _toolbar.SelectedColor;
@@ -183,7 +201,14 @@ internal sealed class OverlayWindow : Window
             Keyboard.Focus(this);
             GetCursorPos(out var p);
             _cursor = ClampPoint(new Point(p.X - _snap.Left, p.Y - _snap.Top));
-            DetectAt(_cursor);
+            if (initialSelection is { } initial)
+            {
+                _sel = initial;
+                _state = State.Selected;
+                UpdateSelectedCursor(_cursor);
+            }
+            else
+                DetectAt(_cursor);
             Refresh();
         };
     }
@@ -228,8 +253,7 @@ internal sealed class OverlayWindow : Window
         _toolbar.ColorChanged += c =>
         {
             _color = c;
-            if (_textBox != null)
-                _textBox.Foreground = _textBox.CaretBrush = new SolidColorBrush(c);
+            StyleTextBox();
             Restyle(a => a.Color = c);
         };
         _toolbar.ThicknessChanged += s =>
@@ -259,9 +283,26 @@ internal sealed class OverlayWindow : Window
         _toolbar.SaveRequested += () => Finish(OverlayAction.Save);
         _toolbar.CopyRequested += () => Finish(OverlayAction.Copy);
         _toolbar.CancelRequested += Close;
+        _toolbar.TextStyleChanged += (bold, background) =>
+        {
+            _textBold = bold;
+            _textBackground = background;
+            StyleTextBox();
+            if (_selected is TextAnnotation)
+            {
+                Restyle(a =>
+                {
+                    var text = (TextAnnotation)a;
+                    text.Bold = bold;
+                    text.Background = background;
+                });
+            }
+        };
         _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
-        if (_recordMode)
+        if (_mode == OverlayMode.Record)
             _toolbar.SetRecordMode();
+        else if (_mode == OverlayMode.EditPin)
+            _toolbar.SetEditPinMode();
     }
 
     // ---------------------------------------------------------------- mouse
@@ -467,7 +508,7 @@ internal sealed class OverlayWindow : Window
             Select(null);
             Refresh();
         }
-        else if (_state == State.Selected)
+        else if (_state == State.Selected && _mode != OverlayMode.EditPin)
             ResetSelection();
         else
             Close();
@@ -524,7 +565,8 @@ internal sealed class OverlayWindow : Window
 
         bool selected = _state == State.Selected;
         e.Handled = true;
-        switch (e.Key)
+        var key = e.RealKey();
+        switch (key)
         {
             case Key.Escape when _selected != null:
                 Select(null);
@@ -537,13 +579,13 @@ internal sealed class OverlayWindow : Window
                 Refresh();
                 break;
             case Key.Left or Key.Right or Key.Up or Key.Down when _selected != null && selected:
-                var step = new Vector(e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0, e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0);
+                var step = new Vector(key == Key.Left ? -1 : key == Key.Right ? 1 : 0, key == Key.Up ? -1 : key == Key.Down ? 1 : 0);
                 var before = _selected.Clone();
                 _annotations.Checkpoint();
                 _selected.MoveFrom(before, step);
                 InvalidateAnnotations();
                 break;
-            case Key.Escape when selected:
+            case Key.Escape when selected && _mode != OverlayMode.EditPin:
                 ResetSelection();
                 break;
             case Key.Escape:
@@ -557,8 +599,15 @@ internal sealed class OverlayWindow : Window
                 ClipboardService.SetText(_magnifier.HexColor);
                 Close();
                 break;
+            case Key.S when ctrl && shift && selected:
+                Finish(OverlayAction.QuickSave);
+                break;
             case Key.S when ctrl && selected:
                 Finish(OverlayAction.Save);
+                break;
+            case Key.OemComma or Key.OemPeriod when !ctrl && _mode != OverlayMode.EditPin && _annotations.Items.Count == 0
+                                                    && _state is State.Detecting or State.Selected:
+                StepHistory(key == Key.OemComma ? -1 : 1);
                 break;
             case Key.T when ctrl && selected:
                 Finish(OverlayAction.Pin);
@@ -570,8 +619,8 @@ internal sealed class OverlayWindow : Window
                 Redo();
                 break;
             case Key.Left or Key.Right or Key.Up or Key.Down:
-                int dx = e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0;
-                int dy = e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0;
+                int dx = key == Key.Left ? -1 : key == Key.Right ? 1 : 0;
+                int dy = key == Key.Up ? -1 : key == Key.Down ? 1 : 0;
                 if (selected)
                     Nudge(dx, dy, shift);
                 else
@@ -602,6 +651,41 @@ internal sealed class OverlayWindow : Window
     }
 
     // ---------------------------------------------------------------- selection
+
+    /// <summary>Jumps to an earlier (-1) or later (+1) capture region; past the newest goes back to detection.</summary>
+    private void StepHistory(int direction)
+    {
+        var history = CaptureSession.History;
+        if (history.Count == 0)
+            return;
+        int index;
+        if (_historyIndex < 0)
+        {
+            if (direction > 0)
+                return; // already past the newest
+            index = history.Count - 1;
+        }
+        else
+            index = Math.Max(0, _historyIndex + direction);
+        if (index >= history.Count)
+        {
+            _historyIndex = -1;
+            ResetSelection();
+            return;
+        }
+
+        var r = history[index];
+        var rect = new Rect(r.X - _snap.Left, r.Y - _snap.Top, r.Width, r.Height);
+        rect.Intersect(new Rect(0, 0, _snap.Width, _snap.Height));
+        if (rect.IsEmpty || rect.Width < 1 || rect.Height < 1)
+            return; // that region is off-screen now (e.g. a monitor was unplugged)
+
+        _historyIndex = index;
+        _sel = rect;
+        _state = State.Selected;
+        UpdateSelectedCursor(_cursor);
+        Refresh();
+    }
 
     private void DetectAt(Point p) => _sel = _detector.HitTest((int)p.X, (int)p.Y) ?? Rect.Empty;
 
@@ -644,6 +728,7 @@ internal sealed class OverlayWindow : Window
         _tool = ToolKind.None;
         _toolbar.ClearTool();
         _state = State.Detecting;
+        _historyIndex = -1;
         Cursor = Cursors.Cross;
         DetectAt(_cursor);
         Refresh();
@@ -656,9 +741,13 @@ internal sealed class OverlayWindow : Window
         ToolKind.Rectangle => new RectAnnotation(p, _color, _size, _scale),
         ToolKind.Ellipse => new EllipseAnnotation(p, _color, _size, _scale),
         ToolKind.Arrow => new ArrowAnnotation(p, _color, _size, _scale),
+        ToolKind.Highlighter => new HighlighterAnnotation(p, _color, _size, _scale),
+        ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, _size, _scale),
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale),
         _ => new PenAnnotation(p, _color, _size, _scale),
     };
+
+    private int NextNumber() => _annotations.Items.OfType<NumberAnnotation>().Select(n => n.Number).DefaultIfEmpty(0).Max() + 1;
 
     private void InvalidateAnnotations()
     {
@@ -682,9 +771,16 @@ internal sealed class OverlayWindow : Window
             _color = annotation.Color;
             _size = annotation.Size;
             _toolbar.SetStyle(_color, _size);
+            if (annotation is TextAnnotation text)
+            {
+                _textBold = text.Bold;
+                _textBackground = text.Background;
+                _toolbar.SetTextStyle(_textBold, _textBackground);
+            }
         }
         bool mosaicOptions = annotation is MosaicAnnotation || (annotation == null && _tool == ToolKind.Mosaic);
-        _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, mosaicOptions);
+        bool textOptions = annotation is TextAnnotation || (annotation == null && _tool == ToolKind.Text);
+        _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, mosaicOptions, textOptions);
     }
 
     /// <summary>Topmost annotation under the point, only within the visible selection.</summary>
@@ -764,7 +860,11 @@ internal sealed class OverlayWindow : Window
         InvalidateAnnotations();
         _color = text.Color;
         _size = text.Size;
+        _textBold = text.Bold;
+        _textBackground = text.Background;
         _toolbar.SetStyle(_color, _size);
+        _toolbar.SetTextStyle(_textBold, _textBackground);
+        _toolbar.SetOptionsVisible(true, text: true);
         BeginText(new Point(text.Position.X - 3, text.Position.Y - 1), text.Text, replacing: true);
     }
 
@@ -779,9 +879,6 @@ internal sealed class OverlayWindow : Window
             Text = text,
             FontSize = fontSize,
             FontFamily = TextAnnotation.Font,
-            Foreground = new SolidColorBrush(_color),
-            CaretBrush = new SolidColorBrush(_color),
-            Background = Brushes.Transparent,
             BorderBrush = new SolidColorBrush(Color.FromArgb(0xAA, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
@@ -789,6 +886,7 @@ internal sealed class OverlayWindow : Window
             MinWidth = fontSize * 2,
             Cursor = Cursors.IBeam,
         };
+        StyleTextBox();
         Canvas.SetLeft(_textBox, p.X);
         Canvas.SetTop(_textBox, p.Y);
         _root.Children.Add(_textBox);
@@ -798,6 +896,17 @@ internal sealed class OverlayWindow : Window
             box.Focus();
             box.CaretIndex = box.Text.Length;
         }, DispatcherPriority.Input);
+    }
+
+    /// <summary>Previews the current color, weight and background in the text being typed.</summary>
+    private void StyleTextBox()
+    {
+        if (_textBox == null)
+            return;
+        var text = new SolidColorBrush(_textBackground ? TextAnnotation.ContrastColor(_color) : _color);
+        _textBox.Foreground = _textBox.CaretBrush = text;
+        _textBox.Background = _textBackground ? new SolidColorBrush(_color) : Brushes.Transparent;
+        _textBox.FontWeight = _textBold ? FontWeights.Bold : FontWeights.Normal;
     }
 
     private void CommitText()
@@ -811,8 +920,7 @@ internal sealed class OverlayWindow : Window
         {
             // Offset by the TextBox border and internal text margin so the text stays where it was typed.
             var position = new Point(_textPos.X + 3, _textPos.Y + 1);
-            var brush = (SolidColorBrush)box.Foreground;
-            var annotation = new TextAnnotation(box.Text, position, brush.Color, _textSize, _scale);
+            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale, _textBold, _textBackground);
             _annotations.Add(annotation, checkpoint: !_textReplacing);
             Select(annotation);
             InvalidateAnnotations();
@@ -847,8 +955,11 @@ internal sealed class OverlayWindow : Window
             return;
         int x = (int)_sel.X + _snap.Left, y = (int)_sel.Y + _snap.Top;
 
+        if (_mode != OverlayMode.EditPin)
+            CaptureSession.AddHistory(new Int32Rect(x, y, (int)_sel.Width, (int)_sel.Height));
+
         // In record mode every confirm action (Enter, double-click, ...) starts recording.
-        if (_recordMode || action == OverlayAction.Record)
+        if (_mode == OverlayMode.Record || action == OverlayAction.Record)
         {
             Result = new OverlayResult(OverlayAction.Record, null, x, y, (int)_sel.Width, (int)_sel.Height);
             Close();

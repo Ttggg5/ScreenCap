@@ -27,7 +27,10 @@ internal abstract class Annotation
     /// <summary>DPI scale of the overlay when the annotation was created.</summary>
     public double Scale { get; }
 
-    protected double Thickness => Size * Scale;
+    protected virtual double Thickness => Size * Scale;
+
+    /// <summary>Color actually used for strokes; the highlighter makes it translucent.</summary>
+    protected virtual Color StrokeColor => Color;
 
     /// <summary>True when the shape is too small to keep (e.g. a click without dragging).</summary>
     public virtual bool IsEmpty => false;
@@ -65,7 +68,7 @@ internal abstract class Annotation
 
     protected Pen CreatePen()
     {
-        var pen = new Pen(new SolidColorBrush(Color), Thickness)
+        var pen = new Pen(new SolidColorBrush(StrokeColor), Thickness)
         {
             StartLineCap = PenLineCap.Round,
             EndLineCap = PenLineCap.Round,
@@ -193,7 +196,7 @@ internal sealed class ArrowAnnotation(Point start, Color color, double size, dou
     }
 }
 
-internal sealed class PenAnnotation : Annotation
+internal class PenAnnotation : Annotation
 {
     private List<Point> _points = new();
 
@@ -240,30 +243,88 @@ internal sealed class PenAnnotation : Annotation
     public override void Render(DrawingContext dc)
     {
         if (_points.Count == 1)
-            dc.DrawEllipse(new SolidColorBrush(Color), null, _points[0], Thickness / 2, Thickness / 2);
+            dc.DrawEllipse(new SolidColorBrush(StrokeColor), null, _points[0], Thickness / 2, Thickness / 2);
         else
             dc.DrawGeometry(null, CreatePen(), GetOutline());
     }
 }
 
-internal sealed class TextAnnotation(string text, Point position, Color color, double size, double scale)
+/// <summary>Translucent wide stroke for marking text, drawn like the pen.</summary>
+internal sealed class HighlighterAnnotation(Point start, Color color, double size, double scale)
+    : PenAnnotation(start, color, size, scale)
+{
+    // Size levels 2/4/6 → 8/16/24 DIP wide.
+    protected override double Thickness => Size * 4 * Scale;
+
+    protected override Color StrokeColor => Color.FromArgb(0x70, Color.R, Color.G, Color.B);
+}
+
+/// <summary>A numbered circle for step-by-step instructions; dragging while placing moves it.</summary>
+internal sealed class NumberAnnotation(Point center, int number, Color color, double size, double scale)
+    : Annotation(color, size, scale)
+{
+    public int Number { get; } = number;
+    public Point Center { get; private set; } = center;
+
+    // Size levels 2/4/6 → 12/16/20 DIP radius.
+    private double Radius => (8 + Size * 2) * Scale;
+
+    public override Rect Bounds => new(Center.X - Radius, Center.Y - Radius, 2 * Radius, 2 * Radius);
+
+    public override void Update(Point point) => Center = point;
+
+    public override bool HitTest(Point point, double tolerance) => (point - Center).Length <= Radius + tolerance;
+
+    public override void MoveFrom(Annotation origin, Vector delta) => Center = ((NumberAnnotation)origin).Center + delta;
+
+    public override void Render(DrawingContext dc)
+    {
+        dc.DrawEllipse(new SolidColorBrush(Color), new Pen(Brushes.White, Math.Max(1, 1.5 * Scale)), Center, Radius, Radius);
+        var typeface = new Typeface(TextAnnotation.Font, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+        var text = new FormattedText(Number.ToString(), CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            typeface, Radius * (Number < 10 ? 1.15 : 0.95), new SolidColorBrush(TextAnnotation.ContrastColor(Color)), 1.0);
+        dc.DrawText(text, new Point(Center.X - text.Width / 2, Center.Y - text.Height / 2));
+    }
+}
+
+internal sealed class TextAnnotation(string text, Point position, Color color, double size, double scale, bool bold = false, bool background = false)
     : Annotation(color, size, scale)
 {
     public static readonly FontFamily Font = new("Microsoft JhengHei UI, Segoe UI");
-    private static readonly Typeface Typeface = new(Font, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
 
     /// <summary>Maps a toolbar size level (2/4/6) to a font size in physical pixels.</summary>
     public static double FontSizeFor(double size, double scale) => (12 + size * 2) * scale;
 
+    /// <summary>Black or white, whichever reads better on <paramref name="c"/>.</summary>
+    public static Color ContrastColor(Color c) => 0.299 * c.R + 0.587 * c.G + 0.114 * c.B > 160 ? Colors.Black : Colors.White;
+
+    /// <summary>Padding around the text when it has a background box, in DIPs.</summary>
+    public const double BackgroundPadding = 4;
+
     public string Text { get; } = text;
     public Point Position { get; private set; } = position;
+    public bool Bold { get; set; } = bold;
+
+    /// <summary>Draws the text in a contrasting color on a box filled with <see cref="Annotation.Color"/>.</summary>
+    public bool Background { get; set; } = background;
+
+    private Rect TextRect
+    {
+        get
+        {
+            var ft = Format(Color);
+            return new Rect(Position, new System.Windows.Size(ft.WidthIncludingTrailingWhitespace, ft.Height));
+        }
+    }
 
     public override Rect Bounds
     {
         get
         {
-            var ft = Format();
-            return new Rect(Position, new System.Windows.Size(ft.WidthIncludingTrailingWhitespace, ft.Height));
+            var r = TextRect;
+            if (Background)
+                r.Inflate(BackgroundPadding * Scale, BackgroundPadding * Scale / 2);
+            return r;
         }
     }
 
@@ -276,10 +337,20 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
 
     public override void MoveFrom(Annotation origin, Vector delta) => Position = ((TextAnnotation)origin).Position + delta;
 
-    public override void Render(DrawingContext dc) => dc.DrawText(Format(), Position);
+    public override void Render(DrawingContext dc)
+    {
+        if (Background)
+        {
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color), null, Bounds, 3 * Scale, 3 * Scale);
+            dc.DrawText(Format(ContrastColor(Color)), Position);
+        }
+        else
+            dc.DrawText(Format(Color), Position);
+    }
 
-    private FormattedText Format() => new(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        Typeface, FontSizeFor(Size, Scale), new SolidColorBrush(Color), 1.0);
+    private FormattedText Format(Color foreground) => new(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+        new Typeface(Font, FontStyles.Normal, Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal),
+        FontSizeFor(Size, Scale), new SolidColorBrush(foreground), 1.0);
 }
 
 /// <summary>Pixelates the dragged area using block-averaged colors from the original snapshot.</summary>

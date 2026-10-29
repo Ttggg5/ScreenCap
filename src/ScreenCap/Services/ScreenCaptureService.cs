@@ -38,6 +38,20 @@ internal sealed class ScreenSnapshot
         return Color.FromRgb(Pixels[i + 2], Pixels[i + 1], Pixels[i]);
     }
 
+    /// <summary>Returns a copy with <paramref name="image"/> painted at (x, y) in snapshot coordinates.</summary>
+    public ScreenSnapshot WithImage(BitmapSource image, int x, int y)
+    {
+        var pixels = (byte[])Pixels.Clone();
+        var converted = new FormatConvertedBitmap(image, PixelFormats.Bgr32, null, 0);
+        int w = Math.Min(converted.PixelWidth, Width - x), h = Math.Min(converted.PixelHeight, Height - y);
+        if (x >= 0 && y >= 0 && w > 0 && h > 0)
+            converted.CopyPixels(new Int32Rect(0, 0, w, h), pixels, Stride, y * Stride + x * 4);
+
+        var bitmap = BitmapSource.Create(Width, Height, 96, 96, PixelFormats.Bgr32, null, pixels, Stride);
+        bitmap.Freeze();
+        return new ScreenSnapshot(Left, Top, Width, Height, pixels, Stride, bitmap);
+    }
+
     public BitmapSource Crop(Rect r)
     {
         var rect = new Int32Rect((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height);

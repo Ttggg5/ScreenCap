@@ -1,6 +1,5 @@
 using System.IO;
 using System.Windows;
-using Microsoft.Win32;
 using ScreenCap.Services;
 
 namespace ScreenCap.Recording;
@@ -16,8 +15,6 @@ internal static class RecordingSession
 {
     private const int GifFramesPerSecond = 10;
     private const int Mp4FramesPerSecond = 30;
-    private const string SettingsKey = @"Software\ScreenCap";
-    private const string FormatValue = "RecordingFormat";
 
     private static ScreenRecorder? _recorder;
     private static RecordingFrameWindow? _frame;
@@ -26,25 +23,14 @@ internal static class RecordingSession
     private static RecordingFormat _format;
     private static bool _stopping;
 
-    /// <summary>Set by the app to show tray notifications.</summary>
-    public static Action<string, string>? Notify { get; set; }
-
     /// <summary>True from the start of recording until the file has been saved or discarded.</summary>
     public static bool IsActive { get; private set; }
 
     /// <summary>Format for the next recording; remembered across runs.</summary>
     public static RecordingFormat Format
     {
-        get
-        {
-            using var key = Registry.CurrentUser.OpenSubKey(SettingsKey);
-            return Enum.TryParse(key?.GetValue(FormatValue) as string, out RecordingFormat format) ? format : RecordingFormat.Gif;
-        }
-        set
-        {
-            using var key = Registry.CurrentUser.CreateSubKey(SettingsKey);
-            key.SetValue(FormatValue, value.ToString());
-        }
+        get => AppSettings.RecordingFormat;
+        set => AppSettings.RecordingFormat = value;
     }
 
     public static string DisplayName(RecordingFormat format) => format == RecordingFormat.Mp4 ? "MP4" : "GIF";
@@ -141,7 +127,7 @@ internal static class RecordingSession
             else if (save && ImageExportService.SaveRecording(temp, _format == RecordingFormat.Mp4) is { } path)
             {
                 ClipboardService.SetFile(path);
-                Notify?.Invoke("ScreenCap", $"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");
+                Notifier.Show($"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");
             }
         }
         finally

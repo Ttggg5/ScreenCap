@@ -5,6 +5,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
+using ScreenCap.Capture;
 using ScreenCap.Services;
 using static ScreenCap.Native.NativeMethods;
 
@@ -16,11 +17,13 @@ internal sealed class PinWindow : Window
     private const double ShadowMargin = 10; // DIP around the image for the drop shadow
     private static readonly List<PinWindow> OpenPins = new();
 
-    private readonly BitmapSource _image;
+    private BitmapSource _image;
     private readonly Image _view;
-    private readonly int _screenX, _screenY;
+    private int _screenX, _screenY;
     private double _zoom = 1;
     private double _dpiScale = 1;
+    private bool _clickThrough;
+    private bool _editing;
 
     private PinWindow(BitmapSource image, int screenX, int screenY)
     {
@@ -52,6 +55,8 @@ internal sealed class PinWindow : Window
         ContextMenu = BuildMenu();
 
         SourceInitialized += (_, _) => Place();
+        // Nothing inside is focusable, so without this key presses never reach the window.
+        Activated += (_, _) => Keyboard.Focus(this);
         DpiChanged += (_, e) =>
         {
             _dpiScale = e.NewDpi.DpiScaleX;
@@ -73,6 +78,12 @@ internal sealed class PinWindow : Window
     {
         foreach (var pin in OpenPins.ToArray())
             pin.Close();
+    }
+
+    public static void ReleaseAllClickThrough()
+    {
+        foreach (var pin in OpenPins)
+            pin.SetClickThrough(false);
     }
 
     /// <summary>Positions the window so the image's top-left lands on the given physical screen point.</summary>
@@ -105,10 +116,18 @@ internal sealed class PinWindow : Window
     private ContextMenu BuildMenu()
     {
         var menu = new ContextMenu();
+        menu.Items.Add(MenuItem("編輯標註", "Space", EditAnnotations));
         menu.Items.Add(MenuItem("複製", "Ctrl+C", Copy));
         menu.Items.Add(MenuItem("另存新檔…", "Ctrl+S", Save));
+        menu.Items.Add(MenuItem("快速存檔", "Ctrl+Shift+S", () => CaptureSession.QuickSave(_image)));
         menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("向左旋轉", "1", () => Transform(new RotateTransform(-90))));
+        menu.Items.Add(MenuItem("向右旋轉", "2", () => Transform(new RotateTransform(90))));
+        menu.Items.Add(MenuItem("水平翻轉", "3", () => Transform(new ScaleTransform(-1, 1))));
+        menu.Items.Add(MenuItem("垂直翻轉", "4", () => Transform(new ScaleTransform(1, -1))));
         menu.Items.Add(MenuItem("原始大小", "Ctrl+0", ResetView));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("滑鼠穿透", "X", () => SetClickThrough(true)));
         menu.Items.Add(new Separator());
         menu.Items.Add(MenuItem("關閉", "Esc", Close));
         return menu;
@@ -119,6 +138,58 @@ internal sealed class PinWindow : Window
         var item = new MenuItem { Header = header, InputGestureText = gesture };
         item.Click += (_, _) => action();
         return item;
+    }
+
+    private void SetImage(BitmapSource image)
+    {
+        _image = image;
+        _view.Source = image;
+    }
+
+    /// <summary>Rotates or flips the pinned image itself, so copy and save use the new orientation.</summary>
+    private void Transform(Transform transform)
+    {
+        var transformed = new TransformedBitmap(_image, transform);
+        transformed.Freeze();
+        SetImage(transformed);
+        ApplySize();
+    }
+
+    /// <summary>Lets clicks pass through to the windows below; undone from the tray menu.</summary>
+    private void SetClickThrough(bool enabled)
+    {
+        if (_clickThrough == enabled)
+            return;
+        _clickThrough = enabled;
+        int style = GetWindowLong(Handle, GWL_EXSTYLE);
+        SetWindowLong(Handle, GWL_EXSTYLE, enabled ? style | WS_EX_TRANSPARENT : style & ~WS_EX_TRANSPARENT);
+        if (enabled)
+            Notifier.Show("貼圖已開啟滑鼠穿透，可從系統匣選單「解除所有貼圖的滑鼠穿透」恢復。");
+    }
+
+    /// <summary>Hides the pin and reopens it in the capture editor at 100% so annotations can be added.</summary>
+    private void EditAnnotations()
+    {
+        if (_editing)
+            return;
+        _editing = true;
+        GetWindowRect(Handle, out var rect);
+        Hide();
+        CaptureSession.EditImage(_image, rect.Left + Inset, rect.Top + Inset, (edited, x, y) =>
+        {
+            _editing = false;
+            if (edited != null)
+            {
+                SetImage(edited);
+                _zoom = 1;
+                _screenX = x;
+                _screenY = y;
+            }
+            Show();
+            if (edited != null)
+                Place();
+            Activate();
+        });
     }
 
     private void Copy() => ClipboardService.SetImage(_image);
@@ -157,11 +228,12 @@ internal sealed class PinWindow : Window
         e.Handled = true;
     }
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    // Preview: with an IME active the bubbling KeyDown is already marked handled.
+    protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
-        base.OnKeyDown(e);
+        base.OnPreviewKeyDown(e);
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-        switch (e.Key)
+        switch (e.RealKey())
         {
             case Key.Escape:
                 Close();
@@ -169,8 +241,29 @@ internal sealed class PinWindow : Window
             case Key.C when ctrl:
                 Copy();
                 break;
+            case Key.S when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift):
+                CaptureSession.QuickSave(_image);
+                break;
             case Key.S when ctrl:
                 Save();
+                break;
+            case Key.Space:
+                EditAnnotations();
+                break;
+            case Key.D1 or Key.NumPad1:
+                Transform(new RotateTransform(-90));
+                break;
+            case Key.D2 or Key.NumPad2:
+                Transform(new RotateTransform(90));
+                break;
+            case Key.D3 or Key.NumPad3:
+                Transform(new ScaleTransform(-1, 1));
+                break;
+            case Key.D4 or Key.NumPad4:
+                Transform(new ScaleTransform(1, -1));
+                break;
+            case Key.X when !ctrl:
+                SetClickThrough(true);
                 break;
             case Key.D0 or Key.NumPad0 when ctrl:
                 ResetView();

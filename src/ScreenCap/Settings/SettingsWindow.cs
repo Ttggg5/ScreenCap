@@ -1,0 +1,188 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using Microsoft.Win32;
+using ScreenCap.Services;
+
+namespace ScreenCap.Settings;
+
+/// <summary>Preferences dialog: hotkeys, save folder and start-at-sign-in.</summary>
+internal sealed class SettingsWindow : Window
+{
+    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x5F, 0x63, 0x68));
+    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
+
+    private readonly HotkeyBox _capture = new(AppSettings.CaptureHotkey);
+    private readonly HotkeyBox _record = new(AppSettings.RecordHotkey);
+    private readonly HotkeyBox _pin = new(AppSettings.PinHotkey);
+    private readonly TextBox _folder = new() { IsReadOnly = true, Padding = new Thickness(4, 3, 4, 3), VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled };
+
+    public SettingsWindow()
+    {
+        Title = "ScreenCap 設定";
+        Width = 520;
+        SizeToContent = SizeToContent.Height;
+        ResizeMode = ResizeMode.NoResize;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+        FontSize = 14;
+        UseLayoutRounding = true;
+        _folder.Text = AppSettings.SaveFolder;
+
+        var body = new StackPanel { Margin = new Thickness(24, 16, 24, 20) };
+
+        body.Children.Add(Heading("熱鍵"));
+        body.Children.Add(Hint("點一下欄位後按下想要的按鍵組合；按 Backspace 或 Delete 停用該熱鍵。"));
+        body.Children.Add(Row("截圖", _capture));
+        body.Children.Add(Row("錄製螢幕", _record));
+        body.Children.Add(Row("剪貼簿貼為貼圖", _pin));
+
+        body.Children.Add(Heading("存檔"));
+        body.Children.Add(Hint("另存新檔的預設位置；截圖時按 Ctrl+Shift+S 會直接存成 PNG 到這裡。"));
+        var browse = new Button { Content = "瀏覽…", Padding = new Thickness(12, 3, 12, 3), Margin = new Thickness(8, 0, 0, 0) };
+        browse.Click += (_, _) => BrowseFolder();
+        var folderRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        DockPanel.SetDock(browse, Dock.Right);
+        folderRow.Children.Add(browse);
+        folderRow.Children.Add(_folder);
+        body.Children.Add(folderRow);
+
+        body.Children.Add(Heading("一般"));
+        body.Children.Add(_startup);
+
+        var reset = new Button { Content = "還原預設", Padding = new Thickness(12, 4, 12, 4) };
+        reset.Click += (_, _) => ResetDefaults();
+        var ok = new Button { Content = "確定", IsDefault = true, MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
+        ok.Click += (_, _) => Apply();
+        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
+        var buttons = new DockPanel { Margin = new Thickness(0, 24, 0, 0), LastChildFill = false };
+        buttons.Children.Add(reset);
+        DockPanel.SetDock(cancel, Dock.Right);
+        DockPanel.SetDock(ok, Dock.Right);
+        buttons.Children.Add(cancel);
+        buttons.Children.Add(ok);
+        body.Children.Add(buttons);
+
+        Content = body;
+    }
+
+    private static TextBlock Heading(string text) => new()
+    {
+        Text = text,
+        FontSize = 16,
+        FontWeight = FontWeights.SemiBold,
+        Margin = new Thickness(0, 14, 0, 4),
+    };
+
+    private static TextBlock Hint(string text) => new()
+    {
+        Text = text,
+        Foreground = Muted,
+        FontSize = 12.5,
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 0, 0, 6),
+    };
+
+    private static Grid Row(string label, Control editor)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 4, 0, 4) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        var text = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+        Grid.SetColumn(editor, 1);
+        grid.Children.Add(text);
+        grid.Children.Add(editor);
+        return grid;
+    }
+
+    private void BrowseFolder()
+    {
+        var dialog = new OpenFolderDialog { Title = "選擇存檔資料夾", InitialDirectory = _folder.Text };
+        if (dialog.ShowDialog(this) == true)
+            _folder.Text = dialog.FolderName;
+    }
+
+    private void ResetDefaults()
+    {
+        _capture.Hotkey = AppSettings.DefaultCaptureHotkey;
+        _record.Hotkey = AppSettings.DefaultRecordHotkey;
+        _pin.Hotkey = AppSettings.DefaultPinHotkey;
+        _folder.Text = AppSettings.DefaultSaveFolder;
+    }
+
+    private void Apply()
+    {
+        var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey }.Where(k => !k.IsNone).ToList();
+        if (keys.Distinct().Count() != keys.Count)
+        {
+            MessageBox.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        AppSettings.CaptureHotkey = _capture.Hotkey;
+        AppSettings.RecordHotkey = _record.Hotkey;
+        AppSettings.PinHotkey = _pin.Hotkey;
+        AppSettings.SaveFolder = _folder.Text;
+        if (_startup.IsChecked != StartupService.IsEnabled)
+            StartupService.SetEnabled(_startup.IsChecked == true);
+        DialogResult = true;
+    }
+
+    /// <summary>A read-only box that records the next key combination pressed in it.</summary>
+    private sealed class HotkeyBox : TextBox
+    {
+        private Hotkey _hotkey;
+
+        public HotkeyBox(Hotkey hotkey)
+        {
+            IsReadOnly = true;
+            IsReadOnlyCaretVisible = false;
+            Padding = new Thickness(6, 3, 6, 3);
+            Cursor = Cursors.Hand;
+            Hotkey = hotkey;
+            GotKeyboardFocus += (_, _) => BorderBrush = Accent;
+            LostKeyboardFocus += (_, _) => ClearValue(BorderBrushProperty);
+        }
+
+        public Hotkey Hotkey
+        {
+            get => _hotkey;
+            set
+            {
+                _hotkey = value;
+                Text = value.ToString();
+            }
+        }
+
+        protected override void OnPreviewKeyDown(KeyEventArgs e)
+        {
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            var modifiers = Keyboard.Modifiers;
+            if (key is Key.Tab or Key.Escape or Key.Enter && modifiers == ModifierKeys.None)
+                return; // keep dialog navigation working
+            e.Handled = true;
+
+            if (key is Key.Back or Key.Delete && modifiers == ModifierKeys.None)
+            {
+                Hotkey = default;
+                return;
+            }
+            if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift
+                or Key.LWin or Key.RWin or Key.ImeProcessed or Key.DeadCharProcessed)
+            {
+                // Preview the modifiers held so far, e.g. "Ctrl+Shift+…".
+                Text = modifiers == ModifierKeys.None ? _hotkey.ToString() : new Hotkey(modifiers, Key.A).ToString()[..^1] + "…";
+                return;
+            }
+            Hotkey = new Hotkey(modifiers, key);
+        }
+
+        protected override void OnPreviewKeyUp(KeyEventArgs e)
+        {
+            // Releasing modifiers without a key restores the current value.
+            Text = _hotkey.ToString();
+        }
+    }
+}

@@ -14,6 +14,8 @@ internal enum ToolKind
     Ellipse,
     Arrow,
     Pen,
+    Highlighter,
+    Number,
     Text,
     Mosaic,
 }
@@ -32,6 +34,8 @@ internal partial class SelectionToolbar : UserControl
             [EllipseTool] = ToolKind.Ellipse,
             [ArrowTool] = ToolKind.Arrow,
             [PenTool] = ToolKind.Pen,
+            [HighlighterTool] = ToolKind.Highlighter,
+            [NumberTool] = ToolKind.Number,
             [TextTool] = ToolKind.Text,
             [MosaicTool] = ToolKind.Mosaic,
         };
@@ -55,6 +59,23 @@ internal partial class SelectionToolbar : UserControl
     public event Action? CopyRequested;
     public event Action? CancelRequested;
     public event Action? RecordRequested;
+
+    /// <summary>Raised with the bold and background state when either text style toggle changes.</summary>
+    public event Action<bool, bool>? TextStyleChanged;
+
+    public bool TextBold => BoldToggle.IsChecked == true;
+    public bool TextBackground => BackgroundToggle.IsChecked == true;
+
+    public void SetTextStyle(bool bold, bool background)
+    {
+        BoldToggle.IsChecked = bold;
+        BackgroundToggle.IsChecked = background;
+    }
+
+    private void OnTextStyleClick(object sender, RoutedEventArgs e) => TextStyleChanged?.Invoke(TextBold, TextBackground);
+
+    /// <summary>Editing an existing pin: recording makes no sense there.</summary>
+    public void SetEditPinMode() => RecordButton.Visibility = Visibility.Collapsed;
 
     /// <summary>Recording-only toolbar: just start recording and cancel.</summary>
     public void SetRecordMode()
@@ -95,12 +116,16 @@ internal partial class SelectionToolbar : UserControl
 
     public int MosaicStrength => (int)MosaicSlider.Value;
 
-    /// <summary>Shows the options row; mosaic shows a blur-strength slider instead of size and color.</summary>
-    public void SetOptionsVisible(bool visible, bool mosaic = false)
+    /// <summary>
+    /// Shows the options row; mosaic shows a blur-strength slider instead of size and color,
+    /// and text adds bold / background toggles.
+    /// </summary>
+    public void SetOptionsVisible(bool visible, bool mosaic = false, bool text = false)
     {
         OptionsRow.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         MosaicOptions.Visibility = mosaic ? Visibility.Visible : Visibility.Collapsed;
         StrokeOptions.Visibility = mosaic ? Visibility.Collapsed : Visibility.Visible;
+        TextOptions.Visibility = text && !mosaic ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void SetMosaicStrength(int strength)
@@ -150,7 +175,7 @@ internal partial class SelectionToolbar : UserControl
                 button.IsChecked = false;
         }
         var tool = clicked.IsChecked == true ? _tools[clicked] : ToolKind.None;
-        SetOptionsVisible(tool != ToolKind.None, tool == ToolKind.Mosaic);
+        SetOptionsVisible(tool != ToolKind.None, tool == ToolKind.Mosaic, tool == ToolKind.Text);
         ToolChanged?.Invoke(tool);
     }
 

@@ -25,15 +25,24 @@ internal sealed class HotkeyService : IDisposable
         _source.AddHook(WndProc);
     }
 
-    /// <returns>false if the hotkey is already taken by another application.</returns>
-    public bool Register(ModifierKeys modifiers, Key key, Action action)
+    /// <returns>false if the hotkey is already taken by another application. A disabled hotkey always succeeds.</returns>
+    public bool Register(Hotkey hotkey, Action action)
     {
+        if (hotkey.IsNone)
+            return true;
         int id = _nextId++;
-        uint vk = (uint)KeyInterop.VirtualKeyFromKey(key);
-        if (!RegisterHotKey(_source.Handle, id, (uint)modifiers | MOD_NOREPEAT, vk))
+        uint vk = (uint)KeyInterop.VirtualKeyFromKey(hotkey.Key);
+        if (!RegisterHotKey(_source.Handle, id, (uint)hotkey.Modifiers | MOD_NOREPEAT, vk))
             return false;
         _actions[id] = action;
         return true;
+    }
+
+    public void UnregisterAll()
+    {
+        foreach (int id in _actions.Keys)
+            UnregisterHotKey(_source.Handle, id);
+        _actions.Clear();
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -48,9 +57,7 @@ internal sealed class HotkeyService : IDisposable
 
     public void Dispose()
     {
-        foreach (int id in _actions.Keys)
-            UnregisterHotKey(_source.Handle, id);
-        _actions.Clear();
+        UnregisterAll();
         _source.RemoveHook(WndProc);
         _source.Dispose();
     }

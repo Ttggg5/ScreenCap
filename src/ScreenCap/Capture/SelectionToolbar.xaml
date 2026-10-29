@@ -105,7 +105,9 @@
                 <ToggleButton x:Name="EllipseTool" Style="{StaticResource ToolToggle}" ToolTip="橢圓" Content="&#x25EF;" Click="OnToolClick" />
                 <ToggleButton x:Name="ArrowTool" Style="{StaticResource ToolToggle}" ToolTip="箭頭" Content="&#x2197;" Click="OnToolClick" />
                 <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#x270E;" Click="OnToolClick" />
+                <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" FontFamily="{StaticResource IconFont}" FontSize="15" Click="OnToolClick" />
                 <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="T" FontFamily="Georgia" FontWeight="Bold" Click="OnToolClick" />
+                <ToggleButton x:Name="NumberTool" Style="{StaticResource ToolToggle}" ToolTip="序號標記" Content="&#x2460;" Click="OnToolClick" />
                 <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克" Content="&#x25A6;" Click="OnToolClick" />
                 <Rectangle Style="{StaticResource Divider}" />
                 <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
@@ -148,6 +150,16 @@
                 <ToggleButton x:Name="SizeLarge" Style="{StaticResource SizeDot}" Tag="6" ToolTip="粗" Click="OnSizeClick">
                     <Ellipse Width="12" Height="12" Fill="#333333" />
                 </ToggleButton>
+                <StackPanel x:Name="TextOptions" Orientation="Horizontal" Visibility="Collapsed">
+                    <Rectangle Style="{StaticResource Divider}" Margin="4,2" />
+                    <ToggleButton x:Name="BoldToggle" Style="{StaticResource SizeDot}" ToolTip="粗體" Content="B"
+                                  FontFamily="Georgia" FontWeight="Bold" FontSize="14" Click="OnTextStyleClick" />
+                    <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource SizeDot}" ToolTip="文字底色" Click="OnTextStyleClick">
+                        <Border Background="#333333" CornerRadius="2" Padding="3,0">
+                            <TextBlock Text="A" Foreground="White" FontFamily="Segoe UI" FontWeight="Bold" FontSize="11" />
+                        </Border>
+                    </ToggleButton>
+                </StackPanel>
                 <Rectangle Style="{StaticResource Divider}" Margin="4,2" />
                 <StackPanel x:Name="Swatches" Orientation="Horizontal" VerticalAlignment="Center">
                     <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" Click="OnColorClick" />

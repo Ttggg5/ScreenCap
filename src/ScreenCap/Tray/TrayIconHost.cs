@@ -6,32 +6,51 @@ using Forms = System.Windows.Forms;
 
 namespace ScreenCap.Tray;
 
+internal sealed record TrayActions(
+    Action Capture,
+    Action ToggleRecording,
+    Action PinFromClipboard,
+    Action CloseAllPins,
+    Action ReleasePins,
+    Action OpenSettings,
+    Action Exit);
+
 internal sealed class TrayIconHost : IDisposable
 {
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Icon _icon;
 
-    public TrayIconHost(Action capture, Action toggleRecording, Action pinFromClipboard, Action closeAllPins, Action exit)
+    public TrayIconHost(TrayActions actions)
     {
         _icon = CreateIcon();
 
         var menu = new Forms.ContextMenuStrip();
         // Wait for the menu to disappear so it doesn't end up in the screenshot.
-        menu.Items.Add("截圖 (F1)", null, async (_, _) =>
+        var capture = new Forms.ToolStripMenuItem();
+        capture.Click += async (_, _) =>
         {
             await Task.Delay(250);
-            capture();
-        });
+            actions.Capture();
+        };
         var record = new Forms.ToolStripMenuItem();
         record.Click += async (_, _) =>
         {
             await Task.Delay(250);
-            toggleRecording();
+            actions.ToggleRecording();
         };
-        menu.Opening += (_, _) => record.Text = RecordingSession.IsActive ? "停止錄製 (Shift+F1)" : "錄製螢幕 (Shift+F1)";
+        var pin = new Forms.ToolStripMenuItem();
+        pin.Click += (_, _) => actions.PinFromClipboard();
+        menu.Opening += (_, _) =>
+        {
+            capture.Text = WithHotkey("截圖", AppSettings.CaptureHotkey);
+            record.Text = WithHotkey(RecordingSession.IsActive ? "停止錄製" : "錄製螢幕", AppSettings.RecordHotkey);
+            pin.Text = WithHotkey("剪貼簿貼為貼圖", AppSettings.PinHotkey);
+        };
+        menu.Items.Add(capture);
         menu.Items.Add(record);
-        menu.Items.Add("剪貼簿貼為貼圖 (F3)", null, (_, _) => pinFromClipboard());
-        menu.Items.Add("關閉所有貼圖", null, (_, _) => closeAllPins());
+        menu.Items.Add(pin);
+        menu.Items.Add("關閉所有貼圖", null, (_, _) => actions.CloseAllPins());
+        menu.Items.Add("解除所有貼圖的滑鼠穿透", null, (_, _) => actions.ReleasePins());
         menu.Items.Add(new Forms.ToolStripSeparator());
 
         var startup = new Forms.ToolStripMenuItem("開機時啟動") { CheckOnClick = true };
@@ -42,23 +61,26 @@ internal sealed class TrayIconHost : IDisposable
                 StartupService.SetEnabled(startup.Checked);
         };
         menu.Items.Add(startup);
+        menu.Items.Add("設定…", null, (_, _) => actions.OpenSettings());
         menu.Items.Add("使用說明", null, (_, _) => HelpWindow.ShowManual());
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("結束", null, (_, _) => exit());
+        menu.Items.Add("結束", null, (_, _) => actions.Exit());
 
         _notifyIcon = new Forms.NotifyIcon
         {
             Icon = _icon,
-            Text = "ScreenCap — F1 截圖",
+            Text = "ScreenCap",
             ContextMenuStrip = menu,
             Visible = true,
         };
         _notifyIcon.MouseClick += (_, e) =>
         {
             if (e.Button == Forms.MouseButtons.Left)
-                capture();
+                actions.Capture();
         };
     }
+
+    private static string WithHotkey(string text, Hotkey hotkey) => hotkey.IsNone ? text : $"{text} ({hotkey})";
 
     public void Notify(string title, string message) =>
         _notifyIcon.ShowBalloonTip(3000, title, message, Forms.ToolTipIcon.Info);
