@@ -100,6 +100,7 @@
         </Border.Effect>
         <StackPanel>
             <StackPanel Orientation="Horizontal">
+                <StackPanel x:Name="EditTools" Orientation="Horizontal">
                 <ToggleButton x:Name="RectangleTool" Style="{StaticResource ToolToggle}" ToolTip="矩形" Content="&#x25AD;" Click="OnToolClick" />
                 <ToggleButton x:Name="EllipseTool" Style="{StaticResource ToolToggle}" ToolTip="橢圓" Content="&#x25EF;" Click="OnToolClick" />
                 <ToggleButton x:Name="ArrowTool" Style="{StaticResource ToolToggle}" ToolTip="箭頭" Content="&#x2197;" Click="OnToolClick" />
@@ -112,8 +113,19 @@
                 <Rectangle Style="{StaticResource Divider}" />
                 <Button Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
                 <Button Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
+                </StackPanel>
+                <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Visibility="Collapsed">
+                    <ToggleButton x:Name="GifFormat" Style="{StaticResource ToolToggle}" Width="40" Content="GIF" ToolTip="錄成 GIF 動畫"
+                                  FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
+                    <ToggleButton x:Name="Mp4Format" Style="{StaticResource ToolToggle}" Width="40" Content="MP4" ToolTip="錄成 MP4 影片"
+                                  FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
+                    <Rectangle Style="{StaticResource Divider}" />
+                </StackPanel>
+                <Button x:Name="RecordButton" Style="{StaticResource ToolButton}" ToolTip="錄製螢幕" Content="&#xE714;" Click="OnRecord" />
+                <TextBlock x:Name="RecordLabel" Text="開始錄製 (Enter)" VerticalAlignment="Center" Margin="0,0,6,0"
+                           Foreground="#333333" FontFamily="Microsoft JhengHei UI" FontSize="12" Visibility="Collapsed" />
                 <Button Style="{StaticResource ToolButton}" ToolTip="取消 (Esc)" Content="&#xE711;" Foreground="#D93025" Click="OnCancel" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="複製到剪貼簿 (Enter)" Content="&#xE73E;" Foreground="#188038" Click="OnCopy" />
+                <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" ToolTip="複製到剪貼簿 (Enter)" Content="&#xE73E;" Foreground="#188038" Click="OnCopy" />
             </StackPanel>
 
             <StackPanel x:Name="OptionsRow" Orientation="Horizontal" Margin="0,3,0,1" Visibility="Collapsed">

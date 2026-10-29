@@ -17,6 +17,13 @@ internal static class NativeMethods
 
     public const int GWL_EXSTYLE = -20;
     public const int WS_EX_TRANSPARENT = 0x00000020;
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
+    public const int WS_EX_NOACTIVATE = 0x08000000;
+
+    public const uint WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    public const int CURSOR_SHOWING = 0x1;
+    public const int DI_NORMAL = 0x3;
 
     public const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     public const int DWMWA_CLOAKED = 14;
@@ -55,7 +62,37 @@ internal static class NativeMethods
         public uint biClrImportant;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CURSORINFO
+    {
+        public int cbSize;
+        public int flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ICONINFO
+    {
+        public bool fIcon;
+        public int xHotspot;
+        public int yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
+    }
+
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    // ---- Cursor ----
+    [DllImport("user32.dll")] public static extern bool GetCursorInfo(ref CURSORINFO info);
+    [DllImport("user32.dll")] public static extern bool GetIconInfo(IntPtr hIcon, out ICONINFO info);
+
+    [DllImport("user32.dll")]
+    public static extern bool DrawIconEx(IntPtr hdc, int x, int y, IntPtr hIcon, int cx, int cy, uint step, IntPtr brush, int flags);
+
+    // ---- Window styles / capture exclusion ----
+    [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int index, int value);
+    [DllImport("user32.dll")] public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
 
     // ---- GDI ----
     [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);

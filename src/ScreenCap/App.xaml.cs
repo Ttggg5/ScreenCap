@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using ScreenCap.Capture;
 using ScreenCap.Pin;
+using ScreenCap.Recording;
 using ScreenCap.Services;
 using ScreenCap.Tray;
 using static ScreenCap.Native.NativeMethods;
@@ -25,19 +26,31 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        _tray = new TrayIconHost(CaptureSession.Start, PinFromClipboard, PinWindow.CloseAll, Shutdown);
+        _tray = new TrayIconHost(() => CaptureSession.Start(), ToggleRecording, PinFromClipboard, PinWindow.CloseAll, Shutdown);
+        RecordingSession.Notify = _tray.Notify;
         _hotkeys = new HotkeyService();
 
         var failed = new List<string>();
-        if (!_hotkeys.Register(ModifierKeys.None, Key.F1, CaptureSession.Start))
+        if (!_hotkeys.Register(ModifierKeys.None, Key.F1, () => CaptureSession.Start()))
             failed.Add("F1（截圖）");
+        if (!_hotkeys.Register(ModifierKeys.Shift, Key.F1, ToggleRecording))
+            failed.Add("Shift+F1（錄製螢幕）");
         if (!_hotkeys.Register(ModifierKeys.None, Key.F3, PinFromClipboard))
             failed.Add("F3（貼圖）");
 
         if (failed.Count > 0)
             _tray.Notify("ScreenCap", $"熱鍵已被其他程式占用：{string.Join("、", failed)}。仍可從系統匣使用。");
         else
-            _tray.Notify("ScreenCap", "已在背景執行。按 F1 截圖，F3 將剪貼簿圖片貼到桌面。右鍵系統匣圖示可開啟使用說明。");
+            _tray.Notify("ScreenCap", "已在背景執行。F1 截圖、Shift+F1 錄製螢幕、F3 將剪貼簿圖片貼到桌面。右鍵系統匣圖示可開啟使用說明。");
+    }
+
+    /// <summary>Starts selecting a region to record, or stops the recording in progress.</summary>
+    private static void ToggleRecording()
+    {
+        if (RecordingSession.IsActive)
+            RecordingSession.Stop();
+        else
+            CaptureSession.Start(recordMode: true);
     }
 
     private void PinFromClipboard()
@@ -54,6 +67,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        RecordingSession.Abort();
         _hotkeys?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();

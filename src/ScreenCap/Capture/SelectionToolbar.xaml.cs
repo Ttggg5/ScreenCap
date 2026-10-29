@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using ScreenCap.Recording;
 
 namespace ScreenCap.Capture;
 
@@ -38,6 +39,7 @@ internal partial class SelectionToolbar : UserControl
         SizeMedium.IsChecked = true;
         ((ToggleButton)Swatches.Children[0]).IsChecked = true;
         SetMosaicStrength(Annotations.MosaicAnnotation.DefaultStrength);
+        RecordButton.ToolTip = $"錄製螢幕（{RecordingSession.DisplayName(RecordingSession.Format)}）";
     }
 
     public event Action<ToolKind>? ToolChanged;
@@ -52,6 +54,33 @@ internal partial class SelectionToolbar : UserControl
     public event Action? SaveRequested;
     public event Action? CopyRequested;
     public event Action? CancelRequested;
+    public event Action? RecordRequested;
+
+    /// <summary>Recording-only toolbar: just start recording and cancel.</summary>
+    public void SetRecordMode()
+    {
+        EditTools.Visibility = Visibility.Collapsed;
+        CopyButton.Visibility = Visibility.Collapsed;
+        OptionsRow.Visibility = Visibility.Collapsed;
+        RecordButton.Foreground = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35));
+        RecordLabel.Visibility = Visibility.Visible;
+        FormatOptions.Visibility = Visibility.Visible;
+        ShowFormat(RecordingSession.Format);
+    }
+
+    private void ShowFormat(RecordingFormat format)
+    {
+        GifFormat.IsChecked = format == RecordingFormat.Gif;
+        Mp4Format.IsChecked = format == RecordingFormat.Mp4;
+        RecordButton.ToolTip = $"開始錄製 {RecordingSession.DisplayName(format)} (Enter)";
+    }
+
+    private void OnFormatClick(object sender, RoutedEventArgs e)
+    {
+        var format = sender == Mp4Format ? RecordingFormat.Mp4 : RecordingFormat.Gif;
+        ShowFormat(format); // clicking the active format keeps it selected
+        RecordingSession.Format = format;
+    }
 
     public Color SelectedColor => ((SolidColorBrush)Swatches.Children.OfType<ToggleButton>().First(b => b.IsChecked == true).Background).Color;
 
@@ -145,4 +174,5 @@ internal partial class SelectionToolbar : UserControl
     private void OnSave(object sender, RoutedEventArgs e) => SaveRequested?.Invoke();
     private void OnCopy(object sender, RoutedEventArgs e) => CopyRequested?.Invoke();
     private void OnCancel(object sender, RoutedEventArgs e) => CancelRequested?.Invoke();
+    private void OnRecord(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
 }

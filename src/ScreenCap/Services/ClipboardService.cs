@@ -11,6 +11,9 @@ internal static class ClipboardService
 
     public static void SetText(string text) => Retry(() => Clipboard.SetText(text));
 
+    /// <summary>Puts a file on the clipboard so it can be pasted into chat apps and Explorer.</summary>
+    public static void SetFile(string path) => Retry(() => Clipboard.SetFileDropList(new System.Collections.Specialized.StringCollection { path }));
+
     /// <summary>
     /// Reads an image from the clipboard. Alpha is dropped because many apps put
     /// 32-bit DIBs with an all-zero alpha channel, which WPF would show as fully transparent.

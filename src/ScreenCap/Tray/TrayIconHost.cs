@@ -1,5 +1,6 @@
 using System.Drawing;
 using ScreenCap.Help;
+using ScreenCap.Recording;
 using ScreenCap.Services;
 using Forms = System.Windows.Forms;
 
@@ -10,7 +11,7 @@ internal sealed class TrayIconHost : IDisposable
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Icon _icon;
 
-    public TrayIconHost(Action capture, Action pinFromClipboard, Action closeAllPins, Action exit)
+    public TrayIconHost(Action capture, Action toggleRecording, Action pinFromClipboard, Action closeAllPins, Action exit)
     {
         _icon = CreateIcon();
 
@@ -21,6 +22,14 @@ internal sealed class TrayIconHost : IDisposable
             await Task.Delay(250);
             capture();
         });
+        var record = new Forms.ToolStripMenuItem();
+        record.Click += async (_, _) =>
+        {
+            await Task.Delay(250);
+            toggleRecording();
+        };
+        menu.Opening += (_, _) => record.Text = RecordingSession.IsActive ? "停止錄製 (Shift+F1)" : "錄製螢幕 (Shift+F1)";
+        menu.Items.Add(record);
         menu.Items.Add("剪貼簿貼為貼圖 (F3)", null, (_, _) => pinFromClipboard());
         menu.Items.Add("關閉所有貼圖", null, (_, _) => closeAllPins());
         menu.Items.Add(new Forms.ToolStripSeparator());

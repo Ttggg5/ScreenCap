@@ -19,9 +19,11 @@ internal enum OverlayAction
     Copy,
     Save,
     Pin,
+    Record,
 }
 
-internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, int ScreenX, int ScreenY)
+/// <param name="Width">Selection size in physical pixels (used for recording).</param>
+internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, int ScreenX, int ScreenY, int Width = 0, int Height = 0)
 {
     public static readonly OverlayResult Cancelled = new(OverlayAction.Cancel, null, 0, 0);
 }
@@ -81,8 +83,11 @@ internal sealed class OverlayWindow : Window
     private double _textSize;
     private bool _textReplacing;     // re-editing an existing text annotation
 
-    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector)
+    private readonly bool _recordMode; // selecting a region to record rather than to screenshot
+
+    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, bool recordMode = false)
     {
+        _recordMode = recordMode;
         _snap = snap;
         _detector = detector;
         _color = _toolbar.SelectedColor;
@@ -254,6 +259,9 @@ internal sealed class OverlayWindow : Window
         _toolbar.SaveRequested += () => Finish(OverlayAction.Save);
         _toolbar.CopyRequested += () => Finish(OverlayAction.Copy);
         _toolbar.CancelRequested += Close;
+        _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
+        if (_recordMode)
+            _toolbar.SetRecordMode();
     }
 
     // ---------------------------------------------------------------- mouse
@@ -837,9 +845,19 @@ internal sealed class OverlayWindow : Window
     {
         if (_state != State.Selected || !HasSelection)
             return;
+        int x = (int)_sel.X + _snap.Left, y = (int)_sel.Y + _snap.Top;
+
+        // In record mode every confirm action (Enter, double-click, ...) starts recording.
+        if (_recordMode || action == OverlayAction.Record)
+        {
+            Result = new OverlayResult(OverlayAction.Record, null, x, y, (int)_sel.Width, (int)_sel.Height);
+            Close();
+            return;
+        }
+
         CommitText();
         var image = Compositor.Compose(_snap, _sel, _annotations.Items);
-        Result = new OverlayResult(action, image, (int)_sel.X + _snap.Left, (int)_sel.Y + _snap.Top);
+        Result = new OverlayResult(action, image, x, y);
         Close();
     }
 

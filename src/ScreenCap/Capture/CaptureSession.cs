@@ -1,4 +1,6 @@
+using System.Windows;
 using ScreenCap.Pin;
+using ScreenCap.Recording;
 using ScreenCap.Services;
 
 namespace ScreenCap.Capture;
@@ -8,16 +10,17 @@ internal static class CaptureSession
 {
     public static bool IsActive { get; private set; }
 
-    public static void Start()
+    /// <param name="recordMode">Select a region to record instead of taking a screenshot.</param>
+    public static void Start(bool recordMode = false)
     {
-        if (IsActive)
+        if (IsActive || RecordingSession.IsActive)
             return;
         IsActive = true;
         try
         {
             var snapshot = ScreenCaptureService.CaptureVirtualScreen();
             var detector = WindowDetector.Snapshot(snapshot);
-            var overlay = new OverlayWindow(snapshot, detector);
+            var overlay = new OverlayWindow(snapshot, detector, recordMode);
             overlay.Closed += (_, _) =>
             {
                 IsActive = false;
@@ -34,6 +37,11 @@ internal static class CaptureSession
 
     private static void HandleResult(OverlayResult result)
     {
+        if (result.Action == OverlayAction.Record)
+        {
+            RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height));
+            return;
+        }
         if (result.Image == null)
             return;
 
