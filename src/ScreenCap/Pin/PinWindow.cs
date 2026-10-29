@@ -33,7 +33,6 @@ internal sealed class PinWindow : Window
         AllowsTransparency = true;
         Background = Brushes.Transparent;
         ResizeMode = ResizeMode.NoResize;
-        SizeToContent = SizeToContent.WidthAndHeight;
         WindowStartupLocation = WindowStartupLocation.Manual;
         Topmost = true;
         ShowInTaskbar = false;
@@ -47,7 +46,6 @@ internal sealed class PinWindow : Window
             Margin = new Thickness(ShadowMargin),
             BorderThickness = new Thickness(1),
             BorderBrush = new SolidColorBrush(Color.FromArgb(0x99, 0x1A, 0x9F, 0xFF)),
-            Background = Brushes.White,
             Child = _view,
             Effect = new DropShadowEffect { BlurRadius = 10, ShadowDepth = 0, Opacity = 0.45, Color = Colors.Black },
         };
@@ -57,7 +55,8 @@ internal sealed class PinWindow : Window
         DpiChanged += (_, e) =>
         {
             _dpiScale = e.NewDpi.DpiScaleX;
-            ApplySize();
+            // WPF rescales the window after this event; restore our size once it has done so.
+            Dispatcher.BeginInvoke(ApplySize);
         };
     }
 
@@ -77,22 +76,30 @@ internal sealed class PinWindow : Window
     }
 
     /// <summary>Positions the window so the image's top-left lands on the given physical screen point.</summary>
+    private IntPtr Handle => new WindowInteropHelper(this).Handle;
+
+    /// <summary>Physical-pixel gap between the window edge and the image (shadow margin + border).</summary>
+    private int Inset => (int)Math.Round((ShadowMargin + 1) * _dpiScale);
+
+    /// <summary>Positions the window so the image's top-left lands on the given physical screen point.</summary>
     private void Place()
     {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        const uint flags = SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE;
-        // Move first so the window picks up the DPI of the target monitor, then offset by the shadow margin.
-        SetWindowPos(hwnd, IntPtr.Zero, _screenX, _screenY, 0, 0, flags);
-        _dpiScale = GetDpiForWindow(hwnd) / 96.0;
+        // Move first so the window picks up the DPI of the target monitor.
+        SetWindowPos(Handle, IntPtr.Zero, _screenX, _screenY, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        _dpiScale = GetDpiForWindow(Handle) / 96.0;
+        SetWindowPos(Handle, IntPtr.Zero, _screenX - Inset, _screenY - Inset, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
         ApplySize();
-        int offset = (int)Math.Round((ShadowMargin + 1) * _dpiScale);
-        SetWindowPos(hwnd, IntPtr.Zero, _screenX - offset, _screenY - offset, 0, 0, flags);
     }
 
+    /// <summary>
+    /// Sizes the window explicitly in physical pixels (keeping its top-left fixed); the image stretches to fill it.
+    /// SizeToContent is not used because it fights with the SetWindowPos placement and can blow the window up.
+    /// </summary>
     private void ApplySize()
     {
-        _view.Width = _image.PixelWidth * _zoom / _dpiScale;
-        _view.Height = _image.PixelHeight * _zoom / _dpiScale;
+        int w = (int)Math.Round(_image.PixelWidth * _zoom) + 2 * Inset;
+        int h = (int)Math.Round(_image.PixelHeight * _zoom) + 2 * Inset;
+        SetWindowPos(Handle, IntPtr.Zero, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
 
     private ContextMenu BuildMenu()
