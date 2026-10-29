@@ -4,6 +4,7 @@ using ScreenCap.Pin;
 using ScreenCap.Recording;
 using ScreenCap.Services;
 using ScreenCap.Settings;
+using ScreenCap.Theme;
 using ScreenCap.Tray;
 using static ScreenCap.Native.NativeMethods;
 
@@ -25,6 +26,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        ThemeManager.Initialize(this);
 
         _tray = new TrayIconHost(new TrayActions(
             Capture: () => CaptureSession.Start(),

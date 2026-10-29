@@ -2,30 +2,32 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:ClassModifier="internal"
+             FontFamily="Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI"
              Cursor="Arrow">
+    <!-- Colors are DynamicResources from ThemeManager so the toolbar follows light/dark mode. -->
     <UserControl.Resources>
         <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
         <Style x:Key="ToolButton" TargetType="Button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="30" />
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="32" />
             <Setter Property="Focusable" Value="False" />
             <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
-            <Setter Property="FontSize" Value="15" />
-            <Setter Property="Foreground" Value="#333333" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Margin="1">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5" Margin="1">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#E5F1FB" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Hover}" />
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#CCE4F7" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Pressed}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -34,26 +36,32 @@
         </Style>
 
         <Style x:Key="ToolToggle" TargetType="ToggleButton">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="30" />
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="32" />
             <Setter Property="Focusable" Value="False" />
-            <Setter Property="FontFamily" Value="Segoe UI Symbol" />
+            <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
             <Setter Property="FontSize" Value="16" />
-            <Setter Property="Foreground" Value="#333333" />
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="4" Margin="1">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                        </Border>
+                        <Grid Margin="1">
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="5">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <!-- Fluent-style selection pill under the active tool -->
+                            <Border x:Name="Pill" Width="14" Height="3" CornerRadius="1.5" VerticalAlignment="Bottom" Margin="0,0,0,1"
+                                    Background="{DynamicResource Brush.Accent}" Visibility="Collapsed" />
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#E5F1FB" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.Hover}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#CCE4F7" />
-                                <Setter Property="Foreground" Value="#1A73E8" />
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
+                                <Setter TargetName="Pill" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="{DynamicResource Brush.AccentStrong}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -61,20 +69,26 @@
             </Setter>
         </Style>
 
+        <!-- Round color swatch; the selected one gets an accent ring -->
         <Style x:Key="Swatch" TargetType="ToggleButton">
-            <Setter Property="Width" Value="18" />
-            <Setter Property="Height" Value="18" />
-            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Margin" Value="1,0" />
             <Setter Property="Focusable" Value="False" />
+            <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="#55000000"
-                                BorderThickness="1" CornerRadius="3" />
+                        <Grid Background="Transparent">
+                            <Ellipse x:Name="Ring" StrokeThickness="2" Stroke="Transparent" />
+                            <Ellipse x:Name="Dot" Margin="4" Fill="{TemplateBinding Background}" Stroke="{DynamicResource Brush.Divider}" StrokeThickness="1" />
+                        </Grid>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Dot" Property="Margin" Value="3" />
+                            </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bd" Property="BorderBrush" Value="#1A73E8" />
-                                <Setter TargetName="Bd" Property="BorderThickness" Value="3" />
+                                <Setter TargetName="Ring" Property="Stroke" Value="{DynamicResource Brush.Accent}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -83,115 +97,114 @@
         </Style>
 
         <Style x:Key="SizeDot" TargetType="ToggleButton" BasedOn="{StaticResource ToolToggle}">
-            <Setter Property="Width" Value="26" />
-            <Setter Property="Height" Value="24" />
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="26" />
         </Style>
 
         <Style x:Key="Divider" TargetType="Rectangle">
             <Setter Property="Width" Value="1" />
-            <Setter Property="Margin" Value="4,6" />
-            <Setter Property="Fill" Value="#22000000" />
+            <Setter Property="Margin" Value="5,7" />
+            <Setter Property="Fill" Value="{DynamicResource Brush.Divider}" />
+        </Style>
+
+        <Style x:Key="Label" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource Brush.Text}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
     </UserControl.Resources>
 
-    <Border Background="#F8FFFFFF" CornerRadius="6" BorderBrush="#33000000" BorderThickness="1" Padding="3">
+    <Border Background="{DynamicResource Brush.Toolbar}" CornerRadius="8" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" Padding="4">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.35" />
+            <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.3" />
         </Border.Effect>
         <StackPanel>
             <StackPanel Orientation="Horizontal">
                 <StackPanel x:Name="EditTools" Orientation="Horizontal">
-                <ToggleButton x:Name="RectangleTool" Style="{StaticResource ToolToggle}" ToolTip="矩形" Content="&#x25AD;" Click="OnToolClick" />
-                <ToggleButton x:Name="EllipseTool" Style="{StaticResource ToolToggle}" ToolTip="橢圓" Content="&#x25EF;" Click="OnToolClick" />
-                <ToggleButton x:Name="ArrowTool" Style="{StaticResource ToolToggle}" ToolTip="箭頭" Content="&#x2197;" Click="OnToolClick" />
-                <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#x270E;" Click="OnToolClick" />
-                <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" FontFamily="{StaticResource IconFont}" FontSize="15" Click="OnToolClick" />
-                <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="T" FontFamily="Georgia" FontWeight="Bold" Click="OnToolClick" />
-                <ToggleButton x:Name="NumberTool" Style="{StaticResource ToolToggle}" ToolTip="序號標記" Content="&#x2460;" Click="OnToolClick" />
-                <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克" Content="&#x25A6;" Click="OnToolClick" />
-                <Rectangle Style="{StaticResource Divider}" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
-                <Rectangle Style="{StaticResource Divider}" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="文字辨識 (OCR)" Content="&#xE8AC;" Click="OnOcr" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
+                    <ToggleButton x:Name="RectangleTool" Style="{StaticResource ToolToggle}" ToolTip="矩形" Content="&#xE739;" Click="OnToolClick" />
+                    <ToggleButton x:Name="EllipseTool" Style="{StaticResource ToolToggle}" ToolTip="橢圓" Content="&#xEA3A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="ArrowTool" Style="{StaticResource ToolToggle}" ToolTip="箭頭" Content="&#xE72A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#xE70F;" Click="OnToolClick" />
+                    <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" Click="OnToolClick" />
+                    <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="&#xE97E;" Click="OnToolClick" />
+                    <ToggleButton x:Name="NumberTool" Style="{StaticResource ToolToggle}" ToolTip="序號標記" Click="OnToolClick">
+                        <Border Width="17" Height="17" CornerRadius="8.5" BorderThickness="1.5"
+                                BorderBrush="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                            <TextBlock Text="1" FontFamily="Segoe UI" FontSize="10" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,0,0,1"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        </Border>
+                    </ToggleButton>
+                    <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克" Content="&#xE80A;" Click="OnToolClick" />
+                    <Rectangle Style="{StaticResource Divider}" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
+                    <Rectangle Style="{StaticResource Divider}" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="文字辨識 (OCR)" Content="&#xE8AC;" Click="OnOcr" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
                 </StackPanel>
                 <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Visibility="Collapsed">
-                    <ToggleButton x:Name="GifFormat" Style="{StaticResource ToolToggle}" Width="40" Content="GIF" ToolTip="錄成 GIF 動畫"
-                                  FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
-                    <ToggleButton x:Name="Mp4Format" Style="{StaticResource ToolToggle}" Width="40" Content="MP4" ToolTip="錄成 MP4 影片"
-                                  FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
+                    <ToggleButton x:Name="GifFormat" Style="{StaticResource ToolToggle}" Width="44" Content="GIF" ToolTip="錄成 GIF 動畫"
+                                  FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
+                    <ToggleButton x:Name="Mp4Format" Style="{StaticResource ToolToggle}" Width="44" Content="MP4" ToolTip="錄成 MP4 影片"
+                                  FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" FontWeight="SemiBold" Click="OnFormatClick" />
                     <Rectangle Style="{StaticResource Divider}" />
                 </StackPanel>
                 <Button x:Name="RecordButton" Style="{StaticResource ToolButton}" ToolTip="錄製螢幕" Content="&#xE714;" Click="OnRecord" />
-                <TextBlock x:Name="RecordLabel" Text="開始錄製 (Enter)" VerticalAlignment="Center" Margin="0,0,6,0"
-                           Foreground="#333333" FontFamily="Microsoft JhengHei UI" FontSize="12" Visibility="Collapsed" />
-                <Button Style="{StaticResource ToolButton}" ToolTip="取消 (Esc)" Content="&#xE711;" Foreground="#D93025" Click="OnCancel" />
-                <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" ToolTip="複製到剪貼簿 (Enter)" Content="&#xE73E;" Foreground="#188038" Click="OnCopy" />
+                <TextBlock x:Name="RecordLabel" Text="開始錄製 (Enter)" Style="{StaticResource Label}" Margin="0,0,8,0" Visibility="Collapsed" />
+                <Rectangle Style="{StaticResource Divider}" />
+                <Button Style="{StaticResource ToolButton}" ToolTip="取消 (Esc)" Content="&#xE711;" Foreground="{DynamicResource Brush.Danger}" Click="OnCancel" />
+                <Button x:Name="CopyButton" Style="{StaticResource ToolButton}" ToolTip="複製到剪貼簿 (Enter)" Content="&#xE8FB;" Foreground="{DynamicResource Brush.Success}" Click="OnCopy" />
             </StackPanel>
 
-            <StackPanel x:Name="OptionsRow" Orientation="Horizontal" Margin="0,3,0,1" Visibility="Collapsed">
-                <StackPanel x:Name="MosaicOptions" Orientation="Horizontal" Visibility="Collapsed" Height="24">
-                    <TextBlock Text="模糊度" VerticalAlignment="Center" Margin="6,0,8,0" Foreground="#333333"
-                               FontFamily="Microsoft JhengHei UI" FontSize="12" />
-                    <Slider x:Name="MosaicSlider" Width="140" Minimum="1" Maximum="10" TickFrequency="1"
+            <StackPanel x:Name="OptionsRow" Orientation="Horizontal" Margin="0,4,0,0" Visibility="Collapsed">
+                <StackPanel x:Name="MosaicOptions" Orientation="Horizontal" Visibility="Collapsed" Height="26">
+                    <TextBlock Text="模糊度" Style="{StaticResource Label}" Margin="8,0,10,0" />
+                    <Slider x:Name="MosaicSlider" Width="150" Minimum="1" Maximum="10" TickFrequency="1"
                             IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center"
                             PreviewMouseLeftButtonDown="OnMosaicSliderPressed" ValueChanged="OnMosaicSliderChanged" />
-                    <TextBlock x:Name="MosaicValue" Width="22" VerticalAlignment="Center" TextAlignment="Right"
-                               Margin="4,0,6,0" Foreground="#333333" FontFamily="Consolas" FontSize="12" />
+                    <TextBlock x:Name="MosaicValue" Width="22" Style="{StaticResource Label}" TextAlignment="Right"
+                               Margin="4,0,8,0" FontFamily="Consolas" />
                 </StackPanel>
                 <StackPanel x:Name="StrokeOptions" Orientation="Horizontal">
-                <ToggleButton x:Name="SizeSmall" Style="{StaticResource SizeDot}" Tag="2" ToolTip="細" Click="OnSizeClick">
-                    <Ellipse Width="4" Height="4" Fill="#333333" />
-                </ToggleButton>
-                <ToggleButton x:Name="SizeMedium" Style="{StaticResource SizeDot}" Tag="4" ToolTip="中" Click="OnSizeClick">
-                    <Ellipse Width="8" Height="8" Fill="#333333" />
-                </ToggleButton>
-                <ToggleButton x:Name="SizeLarge" Style="{StaticResource SizeDot}" Tag="6" ToolTip="粗" Click="OnSizeClick">
-                    <Ellipse Width="12" Height="12" Fill="#333333" />
-                </ToggleButton>
-                <StackPanel x:Name="TextOptions" Orientation="Horizontal" Visibility="Collapsed">
-                    <Rectangle Style="{StaticResource Divider}" Margin="4,2" />
-                    <ToggleButton x:Name="BoldToggle" Style="{StaticResource SizeDot}" ToolTip="粗體" Content="B"
-                                  FontFamily="Georgia" FontWeight="Bold" FontSize="14" Click="OnTextStyleClick" />
-                    <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource SizeDot}" ToolTip="文字底色" Click="OnTextStyleClick">
-                        <Border Background="#333333" CornerRadius="2" Padding="3,0">
-                            <TextBlock Text="A" Foreground="White" FontFamily="Segoe UI" FontWeight="Bold" FontSize="11" />
-                        </Border>
+                    <ToggleButton x:Name="SizeSmall" Style="{StaticResource SizeDot}" Tag="2" ToolTip="細" Click="OnSizeClick">
+                        <Ellipse Width="4" Height="4" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
                     </ToggleButton>
-                </StackPanel>
-                <Rectangle Style="{StaticResource Divider}" Margin="4,2" />
-                <StackPanel x:Name="Swatches" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" ToolTip="紅" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#EC407A" ToolTip="粉紅" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FB8C00" ToolTip="橘" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FDD835" ToolTip="黃" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#7CB342" ToolTip="黃綠" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#43A047" ToolTip="綠" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#00ACC1" ToolTip="青" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#1E88E5" ToolTip="藍" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#3949AB" ToolTip="靛" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#8E24AA" ToolTip="紫" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#6D4C41" ToolTip="棕" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#9E9E9E" ToolTip="灰" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#000000" ToolTip="黑" Click="OnColorClick" />
-                    <ToggleButton Style="{StaticResource Swatch}" Background="#FFFFFF" ToolTip="白" Click="OnColorClick" />
-                </StackPanel>
-                <ToggleButton x:Name="CustomSwatch" Style="{StaticResource Swatch}" Visibility="Collapsed" ToolTip="自訂顏色" Click="OnColorClick" />
-                <ToggleButton x:Name="PaletteToggle" Style="{StaticResource SizeDot}" ToolTip="調色盤" Margin="2,0,0,0" Click="OnPaletteClick">
-                    <Ellipse Width="16" Height="16" Stroke="#55000000" StrokeThickness="1">
-                        <Ellipse.Fill>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#E53935" Offset="0" />
-                                <GradientStop Color="#FDD835" Offset="0.25" />
-                                <GradientStop Color="#43A047" Offset="0.5" />
-                                <GradientStop Color="#1E88E5" Offset="0.75" />
-                                <GradientStop Color="#8E24AA" Offset="1" />
-                            </LinearGradientBrush>
-                        </Ellipse.Fill>
-                    </Ellipse>
-                </ToggleButton>
+                    <ToggleButton x:Name="SizeMedium" Style="{StaticResource SizeDot}" Tag="4" ToolTip="中" Click="OnSizeClick">
+                        <Ellipse Width="8" Height="8" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
+                    <ToggleButton x:Name="SizeLarge" Style="{StaticResource SizeDot}" Tag="6" ToolTip="粗" Click="OnSizeClick">
+                        <Ellipse Width="12" Height="12" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
+                    <StackPanel x:Name="TextOptions" Orientation="Horizontal" Visibility="Collapsed">
+                        <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                        <ToggleButton x:Name="BoldToggle" Style="{StaticResource SizeDot}" ToolTip="粗體" Content="&#xE8DD;" FontSize="14" Click="OnTextStyleClick" />
+                        <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource SizeDot}" ToolTip="文字底色" Click="OnTextStyleClick">
+                            <Border CornerRadius="3" Padding="3,0,3,1"
+                                    Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
+                                <TextBlock Text="A" FontFamily="Segoe UI" FontWeight="Bold" FontSize="11" Foreground="{DynamicResource Brush.Toolbar}" />
+                            </Border>
+                        </ToggleButton>
+                    </StackPanel>
+                    <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                    <StackPanel x:Name="Swatches" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" ToolTip="紅" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#EC407A" ToolTip="粉紅" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#FB8C00" ToolTip="橘" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#FDD835" ToolTip="黃" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#7CB342" ToolTip="黃綠" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#43A047" ToolTip="綠" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#00ACC1" ToolTip="青" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#1E88E5" ToolTip="藍" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#3949AB" ToolTip="靛" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#8E24AA" ToolTip="紫" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#6D4C41" ToolTip="棕" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#9E9E9E" ToolTip="灰" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#000000" ToolTip="黑" Click="OnColorClick" />
+                        <ToggleButton Style="{StaticResource Swatch}" Background="#FFFFFF" ToolTip="白" Click="OnColorClick" />
+                    </StackPanel>
+                    <ToggleButton x:Name="CustomSwatch" Style="{StaticResource Swatch}" Visibility="Collapsed" ToolTip="自訂顏色" Click="OnColorClick" />
+                    <ToggleButton x:Name="PaletteToggle" Style="{StaticResource SizeDot}" ToolTip="調色盤" Margin="2,0,0,0" Click="OnPaletteClick" Content="&#xE790;" />
                 </StackPanel>
             </StackPanel>
 

@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using ScreenCap.Recording;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Services;
 
@@ -99,6 +100,12 @@ internal static class AppSettings
     {
         get => Enum.TryParse(Get("RecordingFormat"), out RecordingFormat format) ? format : RecordingFormat.Gif;
         set => Set("RecordingFormat", value.ToString());
+    }
+
+    public static AppTheme Theme
+    {
+        get => Enum.TryParse(Get("Theme"), out AppTheme mode) ? mode : AppTheme.System;
+        set => Set("Theme", value.ToString());
     }
 
     /// <summary>Colors picked from the custom palette, most recent first.</summary>

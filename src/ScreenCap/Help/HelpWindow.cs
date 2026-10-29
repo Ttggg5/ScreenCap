@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Help;
 
@@ -9,11 +10,6 @@ namespace ScreenCap.Help;
 internal sealed class HelpWindow : Window
 {
     private static HelpWindow? _instance;
-
-    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
-    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x5F, 0x63, 0x68));
-    private static readonly Brush KeyBackground = new SolidColorBrush(Color.FromRgb(0xF1, 0xF3, 0xF4));
-    private static readonly Brush RowBorder = new SolidColorBrush(Color.FromRgb(0xE8, 0xEA, 0xED));
 
     private readonly StackPanel _body = new() { Margin = new Thickness(28, 20, 28, 28) };
 
@@ -25,8 +21,8 @@ internal sealed class HelpWindow : Window
         MinWidth = 480;
         MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        Background = Brushes.White;
-        FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+        ThemeManager.Attach(this);
+        FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI");
         FontSize = 14;
         UseLayoutRounding = true;
         Content = new ScrollViewer { Content = _body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -149,7 +145,7 @@ internal sealed class HelpWindow : Window
             "剪貼簿貼為貼圖、關閉所有貼圖",
             "解除所有貼圖的滑鼠穿透",
             "開機時啟動：勾選後登入 Windows 時會自動執行 ScreenCap",
-            "設定：更改熱鍵、預設存檔資料夾",
+            "設定：更改熱鍵、預設存檔資料夾、外觀（淺色 / 深色 / 跟隨 Windows）",
             "使用說明：開啟本頁",
             "結束：關閉 ScreenCap（所有貼圖也會一併關閉）");
 
@@ -183,7 +179,8 @@ internal sealed class HelpWindow : Window
     private void Section(string title)
     {
         Heading(title, 18, top: 20);
-        _body.Children.Add(new Border { Height = 2, Width = 32, Background = Accent, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, -4, 0, 10) });
+        _body.Children.Add(new Border { Height = 3, Width = 32, CornerRadius = new CornerRadius(1.5), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, -4, 0, 10) }
+            .Themed(Border.BackgroundProperty, "Brush.Accent"));
     }
 
     private void Paragraph(string text) =>
@@ -192,16 +189,17 @@ internal sealed class HelpWindow : Window
             Text = text,
             TextWrapping = TextWrapping.Wrap,
             LineHeight = 22,
-            Foreground = Muted,
             Margin = new Thickness(0, 0, 0, 10),
-        });
+        }.Themed(TextBlock.ForegroundProperty, "Brush.Muted"));
 
     private void Bullets(params string[] items)
     {
         foreach (var item in items)
         {
-            var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Muted, Margin = new Thickness(12, 0, 0, 6) };
-            text.Inlines.Add(new Run("•  ") { Foreground = Accent });
+            var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 0, 6) }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+            var bullet = new Run("•  ");
+            bullet.SetResourceReference(TextElement.ForegroundProperty, "Brush.Accent");
+            text.Inlines.Add(bullet);
             text.Inlines.Add(new Run(item));
             _body.Children.Add(text);
         }
@@ -226,21 +224,19 @@ internal sealed class HelpWindow : Window
 
             var key = new Border
             {
-                Background = KeyBackground,
                 CornerRadius = new CornerRadius(4),
                 Padding = new Thickness(8, 2, 8, 3),
                 Margin = new Thickness(0, 6, 12, 6),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Top,
                 Child = new TextBlock { Text = rows[i].Key, FontSize = 13 },
-            };
-            var keyCell = new Border { BorderBrush = RowBorder, BorderThickness = line, Child = key };
+            }.Themed(Border.BackgroundProperty, "Brush.Card");
+            var keyCell = new Border { BorderThickness = line, Child = key }.Themed(Border.BorderBrushProperty, "Brush.Border");
             var description = new Border
             {
-                BorderBrush = RowBorder,
                 BorderThickness = line,
                 Child = new TextBlock { Text = rows[i].Description, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) },
-            };
+            }.Themed(Border.BorderBrushProperty, "Brush.Border");
 
             Grid.SetRow(keyCell, i);
             Grid.SetRow(description, i);

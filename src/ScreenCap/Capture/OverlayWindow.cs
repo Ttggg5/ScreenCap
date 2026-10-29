@@ -893,6 +893,8 @@ internal sealed class OverlayWindow : Window
         BeginText(new Point(text.Position.X - 3, text.Position.Y - 1), text.Text, replacing: true);
     }
 
+    private static readonly Style InlineTextBoxStyle = new(typeof(TextBox));
+
     private void BeginText(Point p, string text = "", bool replacing = false)
     {
         double fontSize = TextAnnotation.FontSizeFor(_size, _scale);
@@ -901,6 +903,7 @@ internal sealed class OverlayWindow : Window
         _textReplacing = replacing;
         _textBox = new TextBox
         {
+            Style = InlineTextBoxStyle, // not the themed implicit style: this box must stay transparent
             Text = text,
             FontSize = fontSize,
             FontFamily = TextAnnotation.Font,

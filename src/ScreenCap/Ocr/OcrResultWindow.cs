@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 using Language = Windows.Globalization.Language;
 
 namespace ScreenCap.Ocr;
@@ -11,7 +12,6 @@ namespace ScreenCap.Ocr;
 /// <summary>Shows the text recognized in an image, editable, with copy and a language switch.</summary>
 internal sealed class OcrResultWindow : Window
 {
-    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x5F, 0x63, 0x68));
 
     private readonly BitmapSource _image;
     private readonly TextBox _text = new()
@@ -21,12 +21,12 @@ internal sealed class OcrResultWindow : Window
         TextWrapping = TextWrapping.Wrap,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         FontSize = 14,
-        Padding = new Thickness(6),
+        Padding = new Thickness(8),
         IsReadOnly = true,
     };
     private readonly ComboBox _language = new() { MinWidth = 160, VerticalContentAlignment = VerticalAlignment.Center };
-    private readonly TextBlock _status = new() { Foreground = Muted, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 8, 0) };
-    private readonly Button _copy = new() { Content = "複製", MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), IsEnabled = false, ToolTip = "Ctrl+Enter：複製並關閉" };
+    private readonly TextBlock _status = new() { VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(0, 0, 8, 0) };
+    private readonly Button _copy = new() { Content = "複製", MinWidth = 90, IsEnabled = false, ToolTip = "Ctrl+Enter：複製並關閉" };
     private int _run; // ignores results of a recognition superseded by a language change
 
     private OcrResultWindow(BitmapSource image)
@@ -39,9 +39,12 @@ internal sealed class OcrResultWindow : Window
         MinHeight = 240;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Topmost = true; // above pins
-        FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI");
         FontSize = 14;
         UseLayoutRounding = true;
+        ThemeManager.Attach(this);
+        _status.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+        _copy.Themed(StyleProperty, "AccentButton");
 
         var languages = OcrService.Languages;
         var initial = OcrService.DefaultLanguage;
@@ -51,7 +54,7 @@ internal sealed class OcrResultWindow : Window
         _language.SelectionChanged += (_, _) => Recognize();
 
         _copy.Click += (_, _) => Copy();
-        var close = new Button { Content = "關閉", MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
+        var close = new Button { Content = "關閉", MinWidth = 90, Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
         close.Click += (_, _) => Close();
 
         var top = new DockPanel { Margin = new Thickness(0, 0, 0, 8) };

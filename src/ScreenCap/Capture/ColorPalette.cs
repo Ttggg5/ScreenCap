@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Capture;
 
@@ -38,7 +39,8 @@ internal sealed class ColorPalette : UserControl
     public ColorPalette()
     {
         // Saturation goes left → right, brightness top → bottom.
-        var square = new Grid { Width = SquareWidth, Height = SquareHeight, Cursor = Cursors.Cross, ClipToBounds = true };
+        var square = new Grid { Width = SquareWidth, Height = SquareHeight, Cursor = Cursors.Cross };
+        square.Clip = new RectangleGeometry(new Rect(0, 0, SquareWidth, SquareHeight), 4, 4);
         square.Children.Add(new Rectangle { Fill = _hueBrush });
         square.Children.Add(new Rectangle { Fill = new LinearGradientBrush(Colors.White, Color.FromArgb(0, 255, 255, 255), 0) });
         square.Children.Add(new Rectangle { Fill = new LinearGradientBrush(Color.FromArgb(0, 0, 0, 0), Colors.Black, 90) });
@@ -78,9 +80,10 @@ internal sealed class ColorPalette : UserControl
         };
         _hex.LostKeyboardFocus += (_, _) => ApplyHex();
 
-        var label = new TextBlock { Text = "最近使用", FontSize = 11, Foreground = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66)), Margin = new Thickness(0, 8, 0, 3), FontFamily = new FontFamily("Microsoft JhengHei UI") };
+        var label = new TextBlock { Text = "最近使用", FontSize = 11, Margin = new Thickness(0, 8, 0, 3) }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
         var hexRow = new StackPanel { Orientation = Orientation.Horizontal };
-        hexRow.Children.Add(new Border { Width = 24, Height = 22, CornerRadius = new CornerRadius(3), Background = _previewBrush, BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0, 0, 0)), BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 6, 0) });
+        hexRow.Children.Add(new Border { Width = 26, Height = 26, CornerRadius = new CornerRadius(13), Background = _previewBrush, BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 8, 0) }
+            .Themed(Border.BorderBrushProperty, "Brush.Divider"));
         hexRow.Children.Add(_hex);
         var side = new StackPanel { Margin = new Thickness(12, 0, 0, 0) };
         side.Children.Add(hexRow);
@@ -179,13 +182,12 @@ internal sealed class ColorPalette : UserControl
                 Width = 14,
                 Height = 14,
                 Margin = new Thickness(0, 0, 4, 4),
-                CornerRadius = new CornerRadius(2),
+                CornerRadius = new CornerRadius(7),
                 Background = new SolidColorBrush(color),
-                BorderBrush = new SolidColorBrush(Color.FromArgb(0x55, 0, 0, 0)),
                 BorderThickness = new Thickness(1),
                 Cursor = Cursors.Hand,
                 ToolTip = ToHex(color),
-            };
+            }.Themed(Border.BorderBrushProperty, "Brush.Divider");
             swatch.MouseLeftButtonDown += (_, e) =>
             {
                 SetColor(color);

@@ -2,6 +2,7 @@ using System.Drawing;
 using ScreenCap.Help;
 using ScreenCap.Recording;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 using Forms = System.Windows.Forms;
 
 namespace ScreenCap.Tray;
@@ -24,7 +25,22 @@ internal sealed class TrayIconHost : IDisposable
     {
         _icon = CreateIcon();
 
-        var menu = new Forms.ContextMenuStrip();
+        var menu = new Forms.ContextMenuStrip
+        {
+            ShowImageMargin = false,
+            ShowCheckMargin = true,
+            Padding = new Forms.Padding(0, 4, 0, 4),
+            Font = new Font("Microsoft JhengHei UI", 9.5f), // has both CJK and Latin glyphs, so sizes match
+        };
+        menu.Opening += (_, _) =>
+        {
+            var renderer = new TrayMenuRenderer(ThemeManager.IsDark);
+            menu.Renderer = renderer;
+            menu.BackColor = renderer.Background;
+            foreach (Forms.ToolStripItem item in menu.Items)
+                item.Padding = item is Forms.ToolStripSeparator ? item.Padding : new Forms.Padding(0, 5, 12, 5);
+        };
+        menu.HandleCreated += (_, _) => ThemeManager.RoundCorners(menu.Handle);
         // Wait for the menu to disappear so it doesn't end up in the screenshot.
         var capture = new Forms.ToolStripMenuItem();
         capture.Click += async (_, _) =>

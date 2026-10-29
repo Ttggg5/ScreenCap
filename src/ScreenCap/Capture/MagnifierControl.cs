@@ -20,6 +20,8 @@ internal sealed class MagnifierControl : Border
         Background = new SolidColorBrush(Color.FromArgb(0xE6, 0x20, 0x20, 0x20));
         BorderBrush = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF));
         BorderThickness = new Thickness(1);
+        CornerRadius = new CornerRadius(6);
+        Padding = new Thickness(1);
 
         var colorRow = new StackPanel { Orientation = Orientation.Horizontal };
         colorRow.Children.Add(_swatch);
@@ -35,7 +37,7 @@ internal sealed class MagnifierControl : Border
         info.Children.Add(hint);
 
         var stack = new StackPanel();
-        stack.Children.Add(_view);
+        stack.Children.Add(new Border { CornerRadius = new CornerRadius(5, 5, 0, 0), ClipToBounds = true, Child = _view });
         stack.Children.Add(info);
         Child = stack;
     }

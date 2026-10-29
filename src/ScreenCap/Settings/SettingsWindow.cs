@@ -4,20 +4,20 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Settings;
 
 /// <summary>Preferences dialog: hotkeys, save folder and start-at-sign-in.</summary>
 internal sealed class SettingsWindow : Window
 {
-    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x5F, 0x63, 0x68));
-    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
 
     private readonly HotkeyBox _capture = new(AppSettings.CaptureHotkey);
     private readonly HotkeyBox _record = new(AppSettings.RecordHotkey);
     private readonly HotkeyBox _pin = new(AppSettings.PinHotkey);
-    private readonly TextBox _folder = new() { IsReadOnly = true, Padding = new Thickness(4, 3, 4, 3), VerticalContentAlignment = VerticalAlignment.Center };
-    private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled };
+    private readonly TextBox _folder = new() { IsReadOnly = true, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled, Margin = new Thickness(0, 4, 0, 0) };
+    private readonly ComboBox _theme = new();
 
     public SettingsWindow()
     {
@@ -26,10 +26,14 @@ internal sealed class SettingsWindow : Window
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
-        FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+        FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI");
         FontSize = 14;
         UseLayoutRounding = true;
+        ThemeManager.Attach(this);
         _folder.Text = AppSettings.SaveFolder;
+        foreach (var (mode, name) in new[] { (AppTheme.System, "跟隨 Windows 設定"), (AppTheme.Light, "淺色"), (AppTheme.Dark, "深色") })
+            _theme.Items.Add(new ComboBoxItem { Content = name, Tag = mode });
+        _theme.SelectedIndex = (int)AppSettings.Theme;
 
         var body = new StackPanel { Margin = new Thickness(24, 16, 24, 20) };
 
@@ -41,7 +45,7 @@ internal sealed class SettingsWindow : Window
 
         body.Children.Add(Heading("存檔"));
         body.Children.Add(Hint("另存新檔的預設位置；截圖時按 Ctrl+Shift+S 會直接存成 PNG 到這裡。"));
-        var browse = new Button { Content = "瀏覽…", Padding = new Thickness(12, 3, 12, 3), Margin = new Thickness(8, 0, 0, 0) };
+        var browse = new Button { Content = "瀏覽…", Margin = new Thickness(8, 0, 0, 0) };
         browse.Click += (_, _) => BrowseFolder();
         var folderRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
         DockPanel.SetDock(browse, Dock.Right);
@@ -50,13 +54,14 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(folderRow);
 
         body.Children.Add(Heading("一般"));
+        body.Children.Add(Row("外觀", _theme));
         body.Children.Add(_startup);
 
-        var reset = new Button { Content = "還原預設", Padding = new Thickness(12, 4, 12, 4) };
+        var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
-        var ok = new Button { Content = "確定", IsDefault = true, MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
+        var ok = new Button { Content = "確定", IsDefault = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) }.Themed(StyleProperty, "AccentButton");
         ok.Click += (_, _) => Apply();
-        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 80, Padding = new Thickness(12, 4, 12, 4), Margin = new Thickness(8, 0, 0, 0) };
+        var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
         var buttons = new DockPanel { Margin = new Thickness(0, 24, 0, 0), LastChildFill = false };
         buttons.Children.Add(reset);
         DockPanel.SetDock(cancel, Dock.Right);
@@ -76,14 +81,13 @@ internal sealed class SettingsWindow : Window
         Margin = new Thickness(0, 14, 0, 4),
     };
 
-    private static TextBlock Hint(string text) => new()
+    private static TextBlock Hint(string text) => new TextBlock
     {
         Text = text,
-        Foreground = Muted,
         FontSize = 12.5,
         TextWrapping = TextWrapping.Wrap,
         Margin = new Thickness(0, 0, 0, 6),
-    };
+    }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
 
     private static Grid Row(string label, Control editor)
     {
@@ -110,6 +114,7 @@ internal sealed class SettingsWindow : Window
         _record.Hotkey = AppSettings.DefaultRecordHotkey;
         _pin.Hotkey = AppSettings.DefaultPinHotkey;
         _folder.Text = AppSettings.DefaultSaveFolder;
+        _theme.SelectedIndex = (int)AppTheme.System;
     }
 
     private void Apply()
@@ -125,6 +130,12 @@ internal sealed class SettingsWindow : Window
         AppSettings.RecordHotkey = _record.Hotkey;
         AppSettings.PinHotkey = _pin.Hotkey;
         AppSettings.SaveFolder = _folder.Text;
+        var theme = (AppTheme)((ComboBoxItem)_theme.SelectedItem).Tag;
+        if (theme != AppSettings.Theme)
+        {
+            AppSettings.Theme = theme;
+            ThemeManager.Apply();
+        }
         if (_startup.IsChecked != StartupService.IsEnabled)
             StartupService.SetEnabled(_startup.IsChecked == true);
         DialogResult = true;
@@ -139,11 +150,10 @@ internal sealed class SettingsWindow : Window
         {
             IsReadOnly = true;
             IsReadOnlyCaretVisible = false;
-            Padding = new Thickness(6, 3, 6, 3);
             Cursor = Cursors.Hand;
             Hotkey = hotkey;
-            GotKeyboardFocus += (_, _) => BorderBrush = Accent;
-            LostKeyboardFocus += (_, _) => ClearValue(BorderBrushProperty);
+            // Implicit styles only match the exact type, so pick up the themed TextBox style explicitly.
+            SetResourceReference(StyleProperty, typeof(TextBox));
         }
 
         public Hotkey Hotkey
