@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using ScreenCap.Services;
 using Forms = System.Windows.Forms;
 using static ScreenCap.Native.NativeMethods;
 
@@ -23,6 +24,16 @@ internal sealed class TrayIconHost : IDisposable
         });
         menu.Items.Add("剪貼簿貼為貼圖 (F3)", null, (_, _) => pinFromClipboard());
         menu.Items.Add("關閉所有貼圖", null, (_, _) => closeAllPins());
+        menu.Items.Add(new Forms.ToolStripSeparator());
+
+        var startup = new Forms.ToolStripMenuItem("開機時啟動") { CheckOnClick = true };
+        menu.Opening += (_, _) => startup.Checked = StartupService.IsEnabled;
+        startup.CheckedChanged += (_, _) =>
+        {
+            if (startup.Checked != StartupService.IsEnabled)
+                StartupService.SetEnabled(startup.Checked);
+        };
+        menu.Items.Add(startup);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("結束", null, (_, _) => exit());
 
