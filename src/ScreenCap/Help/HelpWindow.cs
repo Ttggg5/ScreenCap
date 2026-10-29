@@ -1,0 +1,204 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+
+namespace ScreenCap.Help;
+
+/// <summary>In-app user manual, opened from the tray menu.</summary>
+internal sealed class HelpWindow : Window
+{
+    private static HelpWindow? _instance;
+
+    private static readonly Brush Accent = new SolidColorBrush(Color.FromRgb(0x1A, 0x73, 0xE8));
+    private static readonly Brush Muted = new SolidColorBrush(Color.FromRgb(0x5F, 0x63, 0x68));
+    private static readonly Brush KeyBackground = new SolidColorBrush(Color.FromRgb(0xF1, 0xF3, 0xF4));
+    private static readonly Brush RowBorder = new SolidColorBrush(Color.FromRgb(0xE8, 0xEA, 0xED));
+
+    private readonly StackPanel _body = new() { Margin = new Thickness(28, 20, 28, 28) };
+
+    private HelpWindow()
+    {
+        Title = "ScreenCap 使用說明";
+        Width = 640;
+        Height = 760;
+        MinWidth = 480;
+        MinHeight = 400;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        Background = Brushes.White;
+        FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
+        FontSize = 14;
+        UseLayoutRounding = true;
+        Content = new ScrollViewer { Content = _body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        BuildContent();
+    }
+
+    public static void ShowManual()
+    {
+        if (_instance == null)
+        {
+            _instance = new HelpWindow();
+            _instance.Closed += (_, _) => _instance = null;
+            _instance.Show();
+        }
+        if (_instance.WindowState == WindowState.Minimized)
+            _instance.WindowState = WindowState.Normal;
+        _instance.Activate();
+    }
+
+    private void BuildContent()
+    {
+        Heading("ScreenCap 使用說明", 24, top: 0);
+        Paragraph("ScreenCap 是常駐在系統匣的截圖工具，可以框選螢幕區域、加上標註，再複製、存檔或貼到桌面上。");
+
+        Section("快速開始");
+        Shortcuts(
+            ("F1", "開始截圖"),
+            ("拖曳滑鼠", "框選要截取的範圍"),
+            ("Enter", "複製到剪貼簿並結束"),
+            ("F3", "把剪貼簿中的圖片貼到桌面"));
+
+        Section("選取區域");
+        Paragraph("按下 F1 後畫面會凍結並變暗。移動滑鼠時會自動框出游標下的視窗或控制項，單擊即可採用；也可以直接拖曳出自訂範圍。");
+        Shortcuts(
+            ("單擊", "採用自動偵測到的視窗範圍"),
+            ("拖曳", "自訂選取範圍"),
+            ("拖曳控制點", "調整選取範圍大小"),
+            ("拖曳選區內部", "移動選取範圍"),
+            ("方向鍵", "選取前：游標移動 1 像素；選取後：選區移動 1 像素"),
+            ("Shift + 方向鍵", "選區大小增減 1 像素"),
+            ("C", "選取前：複製游標下的色值（HEX）"),
+            ("Esc / 右鍵", "取消目前選區；沒有選區時離開截圖"));
+        Paragraph("選取前游標旁會顯示放大鏡，標示目前的螢幕座標與 RGB / HEX 色值，方便精準對齊。");
+
+        Section("標註工具");
+        Paragraph("選好範圍後，下方會出現工具列。點選工具後，可以在第二列選擇粗細與顏色；再點一次同一個工具即可取消。");
+        Shortcuts(
+            ("▭  矩形", "拖曳畫出矩形框"),
+            ("◯  橢圓", "拖曳畫出橢圓"),
+            ("↗  箭頭", "從起點拖曳到箭頭指向的位置"),
+            ("✎  畫筆", "自由手繪"),
+            ("T  文字", "點一下開始輸入；點選區外、按 Esc 或 Ctrl + Enter 完成"),
+            ("▦  馬賽克", "拖曳範圍打上馬賽克，粗細決定格子大小"),
+            ("Ctrl + Z", "復原"),
+            ("Ctrl + Y", "重做"));
+
+        Section("輸出");
+        Shortcuts(
+            ("Enter / 雙擊選區", "複製到剪貼簿"),
+            ("Ctrl + C", "複製到剪貼簿"),
+            ("Ctrl + S", "另存為 PNG / JPG / BMP"),
+            ("Ctrl + T", "貼到桌面（貼圖）"));
+        Paragraph("這些功能也可以從工具列右側的按鈕使用。標註會一起合成到輸出的圖片中。");
+
+        Section("貼圖");
+        Paragraph("貼圖會固定在所有視窗的最上層，適合拿來對照資料或暫存畫面。截圖時按 Ctrl + T，或按 F3 貼上剪貼簿中的圖片。");
+        Shortcuts(
+            ("拖曳", "移動貼圖"),
+            ("滾輪", "縮放"),
+            ("Ctrl + 滾輪", "調整透明度"),
+            ("Ctrl + 0", "還原原始大小與透明度"),
+            ("Ctrl + C", "複製貼圖內容"),
+            ("Ctrl + S", "另存貼圖"),
+            ("雙擊 / Esc", "關閉貼圖"),
+            ("右鍵", "開啟選單"));
+
+        Section("系統匣");
+        Paragraph("左鍵點系統匣圖示可直接截圖；右鍵開啟選單：");
+        Bullets(
+            "截圖、剪貼簿貼為貼圖、關閉所有貼圖",
+            "開機時啟動：勾選後登入 Windows 時會自動執行 ScreenCap",
+            "使用說明：開啟本頁",
+            "結束：關閉 ScreenCap（所有貼圖也會一併關閉）");
+
+        Section("常見問題");
+        Question("按 F1 / F3 沒有反應？",
+            "熱鍵可能被其他程式占用，啟動時系統匣會跳出提示。此時仍可從系統匣圖示截圖。");
+        Question("開機時啟動沒有作用？",
+            "設定記錄的是勾選當下執行檔的位置。如果之後搬移或刪除了 ScreenCap，請從新位置執行後重新勾選。");
+        Question("同時開了兩個 ScreenCap？",
+            "ScreenCap 同一時間只會執行一份，重複開啟時新的會直接結束。");
+    }
+
+    // ---------------------------------------------------------------- builders
+
+    private void Heading(string text, double size, double top) =>
+        _body.Children.Add(new TextBlock
+        {
+            Text = text,
+            FontSize = size,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, top, 0, 8),
+        });
+
+    private void Section(string title)
+    {
+        Heading(title, 18, top: 20);
+        _body.Children.Add(new Border { Height = 2, Width = 32, Background = Accent, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, -4, 0, 10) });
+    }
+
+    private void Paragraph(string text) =>
+        _body.Children.Add(new TextBlock
+        {
+            Text = text,
+            TextWrapping = TextWrapping.Wrap,
+            LineHeight = 22,
+            Foreground = Muted,
+            Margin = new Thickness(0, 0, 0, 10),
+        });
+
+    private void Bullets(params string[] items)
+    {
+        foreach (var item in items)
+        {
+            var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Muted, Margin = new Thickness(12, 0, 0, 6) };
+            text.Inlines.Add(new Run("•  ") { Foreground = Accent });
+            text.Inlines.Add(new Run(item));
+            _body.Children.Add(text);
+        }
+    }
+
+    private void Question(string question, string answer)
+    {
+        _body.Children.Add(new TextBlock { Text = question, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 4) });
+        Paragraph(answer);
+    }
+
+    private void Shortcuts(params (string Key, string Description)[] rows)
+    {
+        var grid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        for (int i = 0; i < rows.Length; i++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var line = new Thickness(0, 0, 0, i == rows.Length - 1 ? 0 : 1);
+
+            var key = new Border
+            {
+                Background = KeyBackground,
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(8, 2, 8, 3),
+                Margin = new Thickness(0, 6, 12, 6),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Child = new TextBlock { Text = rows[i].Key, FontSize = 13 },
+            };
+            var keyCell = new Border { BorderBrush = RowBorder, BorderThickness = line, Child = key };
+            var description = new Border
+            {
+                BorderBrush = RowBorder,
+                BorderThickness = line,
+                Child = new TextBlock { Text = rows[i].Description, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) },
+            };
+
+            Grid.SetRow(keyCell, i);
+            Grid.SetRow(description, i);
+            Grid.SetColumn(description, 1);
+            grid.Children.Add(keyCell);
+            grid.Children.Add(description);
+        }
+        _body.Children.Add(grid);
+    }
+}

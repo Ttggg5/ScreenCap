@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using ScreenCap.Help;
 using ScreenCap.Services;
 using Forms = System.Windows.Forms;
 using static ScreenCap.Native.NativeMethods;
@@ -34,6 +35,7 @@ internal sealed class TrayIconHost : IDisposable
                 StartupService.SetEnabled(startup.Checked);
         };
         menu.Items.Add(startup);
+        menu.Items.Add("使用說明", null, (_, _) => HelpWindow.ShowManual());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("結束", null, (_, _) => exit());
 

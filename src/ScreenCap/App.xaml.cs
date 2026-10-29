@@ -37,7 +37,7 @@ public partial class App : Application
         if (failed.Count > 0)
             _tray.Notify("ScreenCap", $"熱鍵已被其他程式占用：{string.Join("、", failed)}。仍可從系統匣使用。");
         else
-            _tray.Notify("ScreenCap", "已在背景執行。按 F1 截圖，F3 將剪貼簿圖片貼到桌面。");
+            _tray.Notify("ScreenCap", "已在背景執行。按 F1 截圖，F3 將剪貼簿圖片貼到桌面。右鍵系統匣圖示可開啟使用說明。");
     }
 
     private void PinFromClipboard()
