@@ -117,6 +117,16 @@
             </StackPanel>
 
             <StackPanel x:Name="OptionsRow" Orientation="Horizontal" Margin="0,3,0,1" Visibility="Collapsed">
+                <StackPanel x:Name="MosaicOptions" Orientation="Horizontal" Visibility="Collapsed" Height="24">
+                    <TextBlock Text="模糊度" VerticalAlignment="Center" Margin="6,0,8,0" Foreground="#333333"
+                               FontFamily="Microsoft JhengHei UI" FontSize="12" />
+                    <Slider x:Name="MosaicSlider" Width="140" Minimum="1" Maximum="10" TickFrequency="1"
+                            IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center"
+                            PreviewMouseLeftButtonDown="OnMosaicSliderPressed" ValueChanged="OnMosaicSliderChanged" />
+                    <TextBlock x:Name="MosaicValue" Width="22" VerticalAlignment="Center" TextAlignment="Right"
+                               Margin="4,0,6,0" Foreground="#333333" FontFamily="Consolas" FontSize="12" />
+                </StackPanel>
+                <StackPanel x:Name="StrokeOptions" Orientation="Horizontal">
                 <ToggleButton x:Name="SizeSmall" Style="{StaticResource SizeDot}" Tag="2" ToolTip="細" Click="OnSizeClick">
                     <Ellipse Width="4" Height="4" Fill="#333333" />
                 </ToggleButton>
@@ -136,6 +146,7 @@
                     <ToggleButton Style="{StaticResource Swatch}" Background="#8E24AA" Click="OnColorClick" />
                     <ToggleButton Style="{StaticResource Swatch}" Background="#000000" Click="OnColorClick" />
                     <ToggleButton Style="{StaticResource Swatch}" Background="#FFFFFF" Click="OnColorClick" />
+                </StackPanel>
                 </StackPanel>
             </StackPanel>
         </StackPanel>

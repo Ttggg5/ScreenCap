@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace ScreenCap.Capture;
@@ -36,11 +37,15 @@ internal partial class SelectionToolbar : UserControl
         _sizes = [SizeSmall, SizeMedium, SizeLarge];
         SizeMedium.IsChecked = true;
         ((ToggleButton)Swatches.Children[0]).IsChecked = true;
+        SetMosaicStrength(Annotations.MosaicAnnotation.DefaultStrength);
     }
 
     public event Action<ToolKind>? ToolChanged;
     public event Action<Color>? ColorChanged;
     public event Action<double>? ThicknessChanged;
+
+    /// <summary>Raised with the new strength and whether this is the first change of a new slider gesture.</summary>
+    public event Action<int, bool>? MosaicStrengthChanged;
     public event Action? UndoRequested;
     public event Action? RedoRequested;
     public event Action? PinRequested;
@@ -59,6 +64,54 @@ internal partial class SelectionToolbar : UserControl
         OptionsRow.Visibility = Visibility.Collapsed;
     }
 
+    public int MosaicStrength => (int)MosaicSlider.Value;
+
+    /// <summary>Shows the options row; mosaic shows a blur-strength slider instead of size and color.</summary>
+    public void SetOptionsVisible(bool visible, bool mosaic = false)
+    {
+        OptionsRow.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        MosaicOptions.Visibility = mosaic ? Visibility.Visible : Visibility.Collapsed;
+        StrokeOptions.Visibility = mosaic ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    public void SetMosaicStrength(int strength)
+    {
+        _updatingSlider = true;
+        MosaicSlider.Value = strength;
+        MosaicValue.Text = strength.ToString();
+        _updatingSlider = false;
+    }
+
+    private bool _updatingSlider;
+    private bool _sliderGestureStarted;
+
+    private void OnMosaicSliderPressed(object sender, MouseButtonEventArgs e) => _sliderGestureStarted = true;
+
+    private void OnMosaicSliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (MosaicValue == null || _updatingSlider)
+            return; // fired during InitializeComponent, or a programmatic update
+        MosaicValue.Text = MosaicStrength.ToString();
+        MosaicStrengthChanged?.Invoke(MosaicStrength, _sliderGestureStarted);
+        _sliderGestureStarted = false;
+    }
+
+    /// <summary>Reflects an existing annotation's style in the size and color pickers.</summary>
+    public void SetStyle(Color color, double size)
+    {
+        var swatches = Swatches.Children.OfType<ToggleButton>().ToList();
+        if (swatches.FirstOrDefault(b => ((SolidColorBrush)b.Background).Color == color) is { } swatch)
+        {
+            foreach (var b in swatches)
+                b.IsChecked = b == swatch;
+        }
+        if (_sizes.FirstOrDefault(b => double.Parse((string)b.Tag) == size) is { } sizeButton)
+        {
+            foreach (var b in _sizes)
+                b.IsChecked = b == sizeButton;
+        }
+    }
+
     private void OnToolClick(object sender, RoutedEventArgs e)
     {
         var clicked = (ToggleButton)sender;
@@ -68,7 +121,7 @@ internal partial class SelectionToolbar : UserControl
                 button.IsChecked = false;
         }
         var tool = clicked.IsChecked == true ? _tools[clicked] : ToolKind.None;
-        OptionsRow.Visibility = tool == ToolKind.None ? Visibility.Collapsed : Visibility.Visible;
+        SetOptionsVisible(tool != ToolKind.None, tool == ToolKind.Mosaic);
         ToolChanged?.Invoke(tool);
     }
 

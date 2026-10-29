@@ -32,7 +32,7 @@ internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, 
 /// </summary>
 internal sealed class OverlayWindow : Window
 {
-    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing }
+    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing, AnnotationMoving, AnnotationResizing }
 
     private const double HandleSize = 7;  // DIP
     private const double DragThreshold = 3; // physical px
@@ -49,6 +49,7 @@ internal sealed class OverlayWindow : Window
     private readonly Rectangle _border;
     private readonly Rectangle[] _handles = new Rectangle[8];
     private readonly AnnotationLayer _annotationLayer;
+    private readonly AnnotationAdorner _adorner = new() { IsHitTestVisible = false, HandleSize = HandleSize };
     private readonly Border _sizeLabel;
     private readonly TextBlock _sizeText;
     private readonly MagnifierControl _magnifier = new();
@@ -66,9 +67,19 @@ internal sealed class OverlayWindow : Window
     private ToolKind _tool = ToolKind.None;
     private Color _color;
     private double _size;
+    private int _mosaicStrength = MosaicAnnotation.DefaultStrength;
     private Annotation? _drawing;
+
+    // Editing of existing annotations
+    private Annotation? _selected;
+    private Annotation? _editOrigin; // state of _selected when the drag started
+    private int _editHandle = -1;
+    private bool _editDirty;         // an undo checkpoint has been taken for the current drag
+
     private TextBox? _textBox;
     private Point _textPos;
+    private double _textSize;
+    private bool _textReplacing;     // re-editing an existing text annotation
 
     public OverlayWindow(ScreenSnapshot snap, WindowDetector detector)
     {
@@ -112,6 +123,10 @@ internal sealed class OverlayWindow : Window
             Data = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0, 0, snap.Width, snap.Height)), _hole),
             IsHitTestVisible = false,
         });
+
+        _adorner.Width = snap.Width;
+        _adorner.Height = snap.Height;
+        _root.Children.Add(_adorner);
 
         _border = new Rectangle { Stroke = new SolidColorBrush(Accent), IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         _root.Children.Add(_border);
@@ -191,6 +206,8 @@ internal sealed class OverlayWindow : Window
         _border.StrokeThickness = Math.Max(1, Math.Round(scale));
         foreach (var h in _handles)
             h.StrokeThickness = Math.Max(1, Math.Round(scale));
+        _adorner.Scale = scale;
+        _adorner.InvalidateVisual();
         Refresh();
     }
 
@@ -200,10 +217,37 @@ internal sealed class OverlayWindow : Window
         {
             CommitText();
             _tool = tool;
+            Select(null);
             Refresh();
         };
-        _toolbar.ColorChanged += c => _color = c;
-        _toolbar.ThicknessChanged += s => _size = s;
+        _toolbar.ColorChanged += c =>
+        {
+            _color = c;
+            if (_textBox != null)
+                _textBox.Foreground = _textBox.CaretBrush = new SolidColorBrush(c);
+            Restyle(a => a.Color = c);
+        };
+        _toolbar.ThicknessChanged += s =>
+        {
+            _size = s;
+            if (_textBox != null)
+            {
+                _textSize = s;
+                _textBox.FontSize = TextAnnotation.FontSizeFor(s, _scale);
+            }
+            Restyle(a => a.Size = s);
+        };
+        _toolbar.MosaicStrengthChanged += (strength, newGesture) =>
+        {
+            _mosaicStrength = strength;
+            if (_selected is not MosaicAnnotation mosaic)
+                return;
+            // One undo step per slider drag, not per tick.
+            if (newGesture)
+                _annotations.Checkpoint();
+            mosaic.Strength = strength;
+            InvalidateAnnotations();
+        };
         _toolbar.UndoRequested += Undo;
         _toolbar.RedoRequested += Redo;
         _toolbar.PinRequested += () => Finish(OverlayAction.Pin);
@@ -246,6 +290,27 @@ internal sealed class OverlayWindow : Window
 
             case State.Selected:
                 bool inside = _sel.Contains(p);
+
+                // Existing annotations take priority over the selection and the current tool.
+                int annotationHandle = HitAnnotationHandle(p);
+                if (annotationHandle >= 0)
+                {
+                    BeginAnnotationEdit(State.AnnotationResizing, p, annotationHandle);
+                    break;
+                }
+                if (HitAnnotation(p) is { } hit)
+                {
+                    if (e.ClickCount == 2 && hit is TextAnnotation text)
+                        EditText(text);
+                    else
+                    {
+                        Select(hit);
+                        BeginAnnotationEdit(State.AnnotationMoving, p, -1);
+                    }
+                    break;
+                }
+                Select(null);
+
                 if (e.ClickCount == 2 && inside && _tool == ToolKind.None)
                 {
                     Finish(OverlayAction.Copy);
@@ -325,6 +390,11 @@ internal sealed class OverlayWindow : Window
                 _annotationLayer.InvalidateVisual();
                 break;
 
+            case State.AnnotationMoving:
+            case State.AnnotationResizing:
+                DragSelectedAnnotation(p - _press);
+                break;
+
             case State.Selected:
                 UpdateSelectedCursor(p);
                 break;
@@ -356,13 +426,23 @@ internal sealed class OverlayWindow : Window
                 _state = State.Selected;
                 break;
 
+            case State.AnnotationMoving:
+            case State.AnnotationResizing:
+                _editOrigin = null;
+                _state = State.Selected;
+                break;
+
             case State.Drawing:
-                if (_drawing is { IsEmpty: false })
-                    _annotations.Add(_drawing);
+                var drawn = _drawing;
                 _drawing = null;
                 _annotationLayer.Current = null;
-                _annotationLayer.InvalidateVisual();
                 _state = State.Selected;
+                if (drawn is { IsEmpty: false })
+                {
+                    _annotations.Add(drawn);
+                    Select(drawn); // keep the new shape adjustable right away
+                }
+                InvalidateAnnotations();
                 break;
         }
         Refresh();
@@ -374,6 +454,11 @@ internal sealed class OverlayWindow : Window
         e.Handled = true;
         if (_textBox != null)
             CommitText();
+        else if (_selected != null)
+        {
+            Select(null);
+            Refresh();
+        }
         else if (_state == State.Selected)
             ResetSelection();
         else
@@ -382,21 +467,34 @@ internal sealed class OverlayWindow : Window
 
     private void UpdateSelectedCursor(Point p)
     {
-        Cursor = HitHandle(p) switch
+        int annotationHandle = HitAnnotationHandle(p);
+        if (annotationHandle >= 0)
         {
-            0 or 4 => Cursors.SizeNWSE,
-            2 or 6 => Cursors.SizeNESW,
-            1 or 5 => Cursors.SizeNS,
-            3 or 7 => Cursors.SizeWE,
-            _ when !_sel.Contains(p) => Cursors.Arrow,
-            _ => _tool switch
-            {
-                ToolKind.None => Cursors.SizeAll,
-                ToolKind.Text => Cursors.IBeam,
-                _ => Cursors.Cross,
-            },
+            Cursor = _selected is ArrowAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
+            return;
+        }
+        if (HitAnnotation(p) != null)
+        {
+            Cursor = Cursors.SizeAll;
+            return;
+        }
+
+        int handle = HitHandle(p);
+        Cursor = handle >= 0 ? HandleCursor(handle) : !_sel.Contains(p) ? Cursors.Arrow : _tool switch
+        {
+            ToolKind.None => Cursors.SizeAll,
+            ToolKind.Text => Cursors.IBeam,
+            _ => Cursors.Cross,
         };
     }
+
+    private static Cursor HandleCursor(int handle) => handle switch
+    {
+        0 or 4 => Cursors.SizeNWSE,
+        2 or 6 => Cursors.SizeNESW,
+        1 or 5 => Cursors.SizeNS,
+        _ => Cursors.SizeWE,
+    };
 
     // ---------------------------------------------------------------- keyboard
 
@@ -420,6 +518,23 @@ internal sealed class OverlayWindow : Window
         e.Handled = true;
         switch (e.Key)
         {
+            case Key.Escape when _selected != null:
+                Select(null);
+                Refresh();
+                break;
+            case Key.Delete or Key.Back when _selected != null:
+                _annotations.Remove(_selected);
+                Select(null);
+                InvalidateAnnotations();
+                Refresh();
+                break;
+            case Key.Left or Key.Right or Key.Up or Key.Down when _selected != null && selected:
+                var step = new Vector(e.Key == Key.Left ? -1 : e.Key == Key.Right ? 1 : 0, e.Key == Key.Up ? -1 : e.Key == Key.Down ? 1 : 0);
+                var before = _selected.Clone();
+                _annotations.Checkpoint();
+                _selected.MoveFrom(before, step);
+                InvalidateAnnotations();
+                break;
             case Key.Escape when selected:
                 ResetSelection();
                 break;
@@ -488,25 +603,15 @@ internal sealed class OverlayWindow : Window
 
     private Rect ResizeFrom(Rect r, int handle, double dx, double dy)
     {
-        double l = r.Left, t = r.Top, right = r.Right, b = r.Bottom;
-        if (handle is 0 or 6 or 7) l += dx;
-        if (handle is 0 or 1 or 2) t += dy;
-        if (handle is 2 or 3 or 4) right += dx;
-        if (handle is 4 or 5 or 6) b += dy;
-
-        double x1 = Math.Clamp(Math.Min(l, right), 0, _snap.Width - 1);
-        double y1 = Math.Clamp(Math.Min(t, b), 0, _snap.Height - 1);
-        double x2 = Math.Clamp(Math.Max(l, right), x1 + 1, _snap.Width);
-        double y2 = Math.Clamp(Math.Max(t, b), y1 + 1, _snap.Height);
+        var resized = RectHandles.Resize(r, handle, new Vector(dx, dy));
+        double x1 = Math.Clamp(resized.Left, 0, _snap.Width - 1);
+        double y1 = Math.Clamp(resized.Top, 0, _snap.Height - 1);
+        double x2 = Math.Clamp(resized.Right, x1 + 1, _snap.Width);
+        double y2 = Math.Clamp(resized.Bottom, y1 + 1, _snap.Height);
         return new Rect(x1, y1, x2 - x1, y2 - y1);
     }
 
-    private Point[] HandleCenters()
-    {
-        double l = _sel.Left, t = _sel.Top, r = _sel.Right, b = _sel.Bottom;
-        double cx = (l + r) / 2, cy = (t + b) / 2;
-        return [new(l, t), new(cx, t), new(r, t), new(r, cy), new(r, b), new(cx, b), new(l, b), new(l, cy)];
-    }
+    private Point[] HandleCenters() => RectHandles.Points(_sel);
 
     private int HitHandle(Point p)
     {
@@ -525,8 +630,9 @@ internal sealed class OverlayWindow : Window
     private void ResetSelection()
     {
         CommitText();
+        Select(null);
         _annotations.Clear();
-        _annotationLayer.InvalidateVisual();
+        InvalidateAnnotations();
         _tool = ToolKind.None;
         _toolbar.ClearTool();
         _state = State.Detecting;
@@ -537,25 +643,132 @@ internal sealed class OverlayWindow : Window
 
     // ---------------------------------------------------------------- annotations
 
-    private Annotation CreateAnnotation(Point p)
+    private Annotation CreateAnnotation(Point p) => _tool switch
     {
-        double thickness = _size * _scale;
-        return _tool switch
-        {
-            ToolKind.Rectangle => new RectAnnotation(p, _color, thickness),
-            ToolKind.Ellipse => new EllipseAnnotation(p, _color, thickness),
-            ToolKind.Arrow => new ArrowAnnotation(p, _color, thickness),
-            ToolKind.Mosaic => new MosaicAnnotation(p, _snap, Math.Max(4, (int)Math.Round(_size * 3 * _scale))),
-            _ => new PenAnnotation(p, _color, thickness),
-        };
+        ToolKind.Rectangle => new RectAnnotation(p, _color, _size, _scale),
+        ToolKind.Ellipse => new EllipseAnnotation(p, _color, _size, _scale),
+        ToolKind.Arrow => new ArrowAnnotation(p, _color, _size, _scale),
+        ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale),
+        _ => new PenAnnotation(p, _color, _size, _scale),
+    };
+
+    private void InvalidateAnnotations()
+    {
+        _annotationLayer.InvalidateVisual();
+        _adorner.InvalidateVisual();
     }
 
-    private void BeginText(Point p)
+    private void Select(Annotation? annotation)
     {
-        double fontSize = (12 + _size * 2) * _scale;
+        _selected = annotation;
+        _adorner.Target = annotation;
+        _adorner.InvalidateVisual();
+        // New shapes continue with the selected shape's style.
+        if (annotation is MosaicAnnotation mosaic)
+        {
+            _mosaicStrength = mosaic.Strength;
+            _toolbar.SetMosaicStrength(_mosaicStrength);
+        }
+        else if (annotation != null)
+        {
+            _color = annotation.Color;
+            _size = annotation.Size;
+            _toolbar.SetStyle(_color, _size);
+        }
+        bool mosaicOptions = annotation is MosaicAnnotation || (annotation == null && _tool == ToolKind.Mosaic);
+        _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, mosaicOptions);
+    }
+
+    /// <summary>Topmost annotation under the point, only within the visible selection.</summary>
+    private Annotation? HitAnnotation(Point p)
+    {
+        if (!_sel.Contains(p))
+            return null;
+        double tolerance = 4 * _scale;
+        var items = _annotations.Items;
+        for (int i = items.Count - 1; i >= 0; i--)
+        {
+            if (items[i].HitTest(p, tolerance))
+                return items[i];
+        }
+        return null;
+    }
+
+    private int HitAnnotationHandle(Point p)
+    {
+        if (_selected == null)
+            return -1;
+        double tolerance = HandleSize * _scale;
+        var handles = _selected.Handles;
+        for (int i = 0; i < handles.Length; i++)
+        {
+            if (Math.Abs(p.X - handles[i].X) <= tolerance && Math.Abs(p.Y - handles[i].Y) <= tolerance)
+                return i;
+        }
+        return -1;
+    }
+
+    private void BeginAnnotationEdit(State state, Point p, int handle)
+    {
+        _state = state;
+        _press = p;
+        _editHandle = handle;
+        _editOrigin = _selected!.Clone();
+        _editDirty = false;
+        CaptureMouse();
+    }
+
+    private void DragSelectedAnnotation(Vector delta)
+    {
+        if (_selected == null || _editOrigin == null)
+            return;
+        if (!_editDirty)
+        {
+            if (delta.Length < 1)
+                return; // a plain click only selects; don't record an undo step
+            _annotations.Checkpoint();
+            _editDirty = true;
+        }
+
+        if (_state == State.AnnotationMoving)
+            _selected.MoveFrom(_editOrigin, delta);
+        else
+            _selected.DragHandleFrom(_editOrigin, _editHandle, delta);
+        InvalidateAnnotations();
+    }
+
+    /// <summary>Applies a toolbar style change to the selected annotation as an undoable step.</summary>
+    private void Restyle(Action<Annotation> change)
+    {
+        if (_selected == null)
+            return;
+        _annotations.Checkpoint();
+        change(_selected);
+        InvalidateAnnotations();
+        Refresh();
+    }
+
+    private void EditText(TextAnnotation text)
+    {
+        // Removing records the undo step; committing the edit adds the replacement without another one.
+        _annotations.Remove(text);
+        Select(null);
+        InvalidateAnnotations();
+        _color = text.Color;
+        _size = text.Size;
+        _toolbar.SetStyle(_color, _size);
+        BeginText(new Point(text.Position.X - 3, text.Position.Y - 1), text.Text, replacing: true);
+    }
+
+    private void BeginText(Point p, string text = "", bool replacing = false)
+    {
+        double fontSize = TextAnnotation.FontSizeFor(_size, _scale);
         _textPos = p;
+        _textSize = _size;
+        _textReplacing = replacing;
         _textBox = new TextBox
         {
+            Text = text,
             FontSize = fontSize,
             FontFamily = TextAnnotation.Font,
             Foreground = new SolidColorBrush(_color),
@@ -572,7 +785,11 @@ internal sealed class OverlayWindow : Window
         Canvas.SetTop(_textBox, p.Y);
         _root.Children.Add(_textBox);
         var box = _textBox;
-        Dispatcher.BeginInvoke(() => box.Focus(), DispatcherPriority.Input);
+        Dispatcher.BeginInvoke(() =>
+        {
+            box.Focus();
+            box.CaretIndex = box.Text.Length;
+        }, DispatcherPriority.Input);
     }
 
     private void CommitText()
@@ -587,23 +804,31 @@ internal sealed class OverlayWindow : Window
             // Offset by the TextBox border and internal text margin so the text stays where it was typed.
             var position = new Point(_textPos.X + 3, _textPos.Y + 1);
             var brush = (SolidColorBrush)box.Foreground;
-            _annotations.Add(new TextAnnotation(box.Text, position, box.FontSize, brush.Color));
-            _annotationLayer.InvalidateVisual();
+            var annotation = new TextAnnotation(box.Text, position, brush.Color, _textSize, _scale);
+            _annotations.Add(annotation, checkpoint: !_textReplacing);
+            Select(annotation);
+            InvalidateAnnotations();
         }
         Keyboard.Focus(this);
+        Refresh();
     }
 
     private void Undo()
     {
         CommitText();
+        // Undo restores clones, so the selected instance is no longer part of the list.
+        Select(null);
         if (_annotations.Undo())
-            _annotationLayer.InvalidateVisual();
+            InvalidateAnnotations();
+        Refresh();
     }
 
     private void Redo()
     {
+        Select(null);
         if (_annotations.Redo())
-            _annotationLayer.InvalidateVisual();
+            InvalidateAnnotations();
+        Refresh();
     }
 
     // ---------------------------------------------------------------- finish
@@ -680,7 +905,7 @@ internal sealed class OverlayWindow : Window
         }
 
         // Toolbar
-        bool showToolbar = has && _state is State.Selected or State.Drawing;
+        bool showToolbar = has && _state is State.Selected or State.Drawing or State.AnnotationMoving or State.AnnotationResizing;
         _toolbar.Visibility = showToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (showToolbar)
         {
