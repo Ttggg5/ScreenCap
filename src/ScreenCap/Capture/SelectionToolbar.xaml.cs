@@ -66,6 +66,7 @@ internal partial class SelectionToolbar : UserControl
     public event Action? CopyRequested;
     public event Action? CancelRequested;
     public event Action? RecordRequested;
+    public event Action? OcrRequested;
 
     /// <summary>Raised with the bold and background state when either text style toggle changes.</summary>
     public event Action<bool, bool>? TextStyleChanged;
@@ -232,4 +233,5 @@ internal partial class SelectionToolbar : UserControl
     private void OnCopy(object sender, RoutedEventArgs e) => CopyRequested?.Invoke();
     private void OnCancel(object sender, RoutedEventArgs e) => CancelRequested?.Invoke();
     private void OnRecord(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
+    private void OnOcr(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
 }

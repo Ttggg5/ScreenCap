@@ -21,6 +21,7 @@ internal enum OverlayAction
     Pin,
     Record,
     QuickSave,
+    Ocr,
 }
 
 internal enum OverlayMode
@@ -299,6 +300,7 @@ internal sealed class OverlayWindow : Window
             }
         };
         _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
+        _toolbar.OcrRequested += () => Finish(OverlayAction.Ocr);
         if (_mode == OverlayMode.Record)
             _toolbar.SetRecordMode();
         else if (_mode == OverlayMode.EditPin)

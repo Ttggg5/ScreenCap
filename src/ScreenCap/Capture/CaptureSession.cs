@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
+using ScreenCap.Ocr;
 using ScreenCap.Pin;
 using ScreenCap.Recording;
 using ScreenCap.Services;
@@ -129,6 +130,9 @@ internal static class CaptureSession
                 break;
             case OverlayAction.QuickSave:
                 QuickSave(result.Image);
+                break;
+            case OverlayAction.Ocr:
+                OcrResultWindow.ShowFor(result.Image);
                 break;
         }
     }
