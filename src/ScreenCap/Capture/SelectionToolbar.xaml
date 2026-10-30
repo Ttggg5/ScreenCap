@@ -134,7 +134,7 @@
                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
                         </Border>
                     </ToggleButton>
-                    <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克" Content="&#xE80A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克 / 模糊" Content="&#xE80A;" Click="OnToolClick" />
                     <Rectangle Style="{StaticResource Divider}" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
@@ -159,7 +159,12 @@
 
             <StackPanel x:Name="OptionsRow" Orientation="Horizontal" Margin="0,4,0,0" Visibility="Collapsed">
                 <StackPanel x:Name="MosaicOptions" Orientation="Horizontal" Visibility="Collapsed" Height="26">
-                    <TextBlock Text="模糊度" Style="{StaticResource Label}" Margin="8,0,10,0" />
+                    <ToggleButton x:Name="PixelateStyle" Style="{StaticResource SizeDot}" Width="56" Content="馬賽克" ToolTip="馬賽克方塊"
+                                  FontFamily="Microsoft JhengHei UI" FontSize="12" Click="OnMosaicStyleClick" />
+                    <ToggleButton x:Name="BlurStyle" Style="{StaticResource SizeDot}" Width="48" Content="模糊" ToolTip="高斯模糊"
+                                  FontFamily="Microsoft JhengHei UI" FontSize="12" Click="OnMosaicStyleClick" />
+                    <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                    <TextBlock Text="強度" Style="{StaticResource Label}" Margin="4,0,10,0" />
                     <Slider x:Name="MosaicSlider" Width="150" Minimum="1" Maximum="10" TickFrequency="1"
                             IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center"
                             PreviewMouseLeftButtonDown="OnMosaicSliderPressed" ValueChanged="OnMosaicSliderChanged" />
@@ -205,6 +210,7 @@
                     </StackPanel>
                     <ToggleButton x:Name="CustomSwatch" Style="{StaticResource Swatch}" Visibility="Collapsed" ToolTip="自訂顏色" Click="OnColorClick" />
                     <ToggleButton x:Name="PaletteToggle" Style="{StaticResource SizeDot}" ToolTip="調色盤" Margin="2,0,0,0" Click="OnPaletteClick" Content="&#xE790;" />
+                    <ToggleButton x:Name="EyedropperToggle" Style="{StaticResource SizeDot}" ToolTip="吸管：從截圖上取色" Click="OnEyedropperClick" Content="&#xEF3C;" />
                 </StackPanel>
             </StackPanel>
 

@@ -74,4 +74,35 @@ public class CompositorTests
         Assert.InRange(center.R, 110, 145);
         Assert.Equal(center, Images.PixelAt(image, 8, 7)); // whole block is one color
     });
+
+    [Fact]
+    public void Blur_SmoothsEdges_AndKeepsFlatAreas() => Sta.Run(() =>
+    {
+        // Left half black, right half white.
+        var pixels = Images.Solid(120, 60, Colors.White);
+        Images.FillRect(pixels, 120, new Int32Rect(0, 0, 60, 60), Colors.Black);
+        var snapshot = new Services.ScreenSnapshot(0, 0, 120, 60, pixels, 480, Images.ToBitmap(pixels, 120, 60));
+        var blur = new MosaicAnnotation(new Point(0, 0), snapshot, 2, 1, blur: true); // radius 5
+        blur.Update(new Point(120, 60));
+
+        var image = Compositor.Compose(snapshot, new Rect(0, 0, 120, 60), [blur]);
+        byte[] row = Images.Bgra(image);
+        int Gray(int x) => row[(30 * 120 + x) * 4 + 2];
+
+        Assert.Equal(0, Gray(5));                     // far from the edge: unchanged
+        Assert.Equal(255, Gray(115));
+        Assert.InRange(Gray(60), 100, 160);           // at the edge: mid gray
+        for (int x = 50; x < 70; x++)
+            Assert.True(Gray(x + 1) >= Gray(x), $"not monotonic at {x}"); // a smooth ramp, no blocks
+    });
+
+    [Fact]
+    public void Blur_StyleIsKeptWhenCloned_AndCanBeSwitched() => Sta.Run(() =>
+    {
+        var snapshot = Images.Snapshot(50, 50, Colors.White);
+        var mosaic = new MosaicAnnotation(new Point(0, 0), snapshot, 4, 1, blur: true);
+        Assert.True(((MosaicAnnotation)mosaic.Clone()).Blur);
+        mosaic.Blur = false;
+        Assert.False(mosaic.Blur);
+    });
 }

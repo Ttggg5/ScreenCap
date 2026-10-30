@@ -85,6 +85,8 @@ internal sealed class OverlayWindow : Window
     private Color _color;
     private double _size;
     private int _mosaicStrength = MosaicAnnotation.DefaultStrength;
+    private bool _mosaicBlur;
+    private bool _picking; // eyedropper: the next click picks a color from the screen
     private Annotation? _drawing;
 
     // Editing of existing annotations
@@ -280,6 +282,19 @@ internal sealed class OverlayWindow : Window
             mosaic.Strength = strength;
             InvalidateAnnotations();
         };
+        _toolbar.MosaicStyleChanged += blur =>
+        {
+            _mosaicBlur = blur;
+            if (_selected is MosaicAnnotation)
+                Restyle(a => ((MosaicAnnotation)a).Blur = blur);
+        };
+        _toolbar.EyedropperToggled += active =>
+        {
+            CommitText();
+            _picking = active;
+            Cursor = active ? Cursors.Cross : Cursors.Arrow;
+            Refresh();
+        };
         _toolbar.UndoRequested += Undo;
         _toolbar.RedoRequested += Redo;
         _toolbar.PinRequested += () => Finish(OverlayAction.Pin);
@@ -329,6 +344,13 @@ internal sealed class OverlayWindow : Window
             FocusOverlay(); // leave the palette's HEX box so overlay shortcuts work again
 
         var p = MousePoint(e);
+        if (_picking)
+        {
+            StopPicking();
+            _toolbar.PickColor(_snap.GetPixel((int)p.X, (int)p.Y));
+            e.Handled = true;
+            return;
+        }
         if (_textBox != null)
         {
             CommitText();
@@ -441,7 +463,7 @@ internal sealed class OverlayWindow : Window
                 break;
 
             case State.Drawing:
-                _drawing?.Update(p);
+                _drawing?.Update(p, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 _annotationLayer.InvalidateVisual();
                 break;
 
@@ -451,10 +473,37 @@ internal sealed class OverlayWindow : Window
                 break;
 
             case State.Selected:
-                UpdateSelectedCursor(p);
+                if (_picking)
+                    Cursor = Cursors.Cross;
+                else
+                    UpdateSelectedCursor(p);
                 break;
         }
         Refresh();
+    }
+
+    private void StopPicking()
+    {
+        _picking = false;
+        _toolbar.SetEyedropperActive(false);
+        UpdateSelectedCursor(_cursor);
+        Refresh();
+    }
+
+    /// <summary>Re-applies the Shift constraint to the shape being drawn when Shift is pressed or released.</summary>
+    private void UpdateDrawingConstraint()
+    {
+        if (_state != State.Drawing || _drawing == null)
+            return;
+        _drawing.Update(_cursor, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+        _annotationLayer.InvalidateVisual();
+    }
+
+    protected override void OnPreviewKeyUp(KeyEventArgs e)
+    {
+        base.OnPreviewKeyUp(e);
+        if (e.Key is Key.LeftShift or Key.RightShift)
+            UpdateDrawingConstraint();
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -507,7 +556,9 @@ internal sealed class OverlayWindow : Window
     {
         base.OnMouseRightButtonDown(e);
         e.Handled = true;
-        if (_textBox != null)
+        if (_picking)
+            StopPicking();
+        else if (_textBox != null)
             CommitText();
         else if (_selected != null)
         {
@@ -585,6 +636,12 @@ internal sealed class OverlayWindow : Window
         var key = e.RealKey();
         switch (key)
         {
+            case Key.Escape when _picking:
+                StopPicking();
+                break;
+            case Key.LeftShift or Key.RightShift when _state == State.Drawing:
+                UpdateDrawingConstraint();
+                break;
             case Key.Escape when _selected != null:
                 Select(null);
                 Refresh();
@@ -616,7 +673,7 @@ internal sealed class OverlayWindow : Window
                 ClipboardService.SetText(_magnifier.ColorText);
                 Close();
                 break;
-            case Key.LeftShift or Key.RightShift when !selected && !e.IsRepeat:
+            case Key.LeftShift or Key.RightShift when _state == State.Detecting && !e.IsRepeat:
                 // Toggle the color format the magnifier copies (HEX / RGB); remembered across captures.
                 _magnifier.UseRgb = !_magnifier.UseRgb;
                 AppSettings.CopyColorAsRgb = _magnifier.UseRgb;
@@ -794,7 +851,7 @@ internal sealed class OverlayWindow : Window
         ToolKind.Arrow => new ArrowAnnotation(p, _color, _size, _scale),
         ToolKind.Highlighter => new HighlighterAnnotation(p, _color, _size, _scale),
         ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, _size, _scale),
-        ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale),
+        ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
         _ => new PenAnnotation(p, _color, _size, _scale),
     };
 
@@ -815,7 +872,9 @@ internal sealed class OverlayWindow : Window
         if (annotation is MosaicAnnotation mosaic)
         {
             _mosaicStrength = mosaic.Strength;
+            _mosaicBlur = mosaic.Blur;
             _toolbar.SetMosaicStrength(_mosaicStrength);
+            _toolbar.SetMosaicStyle(_mosaicBlur);
         }
         else if (annotation != null)
         {
@@ -1073,7 +1132,7 @@ internal sealed class OverlayWindow : Window
         }
 
         // Magnifier
-        bool showMagnifier = _state is State.Detecting or State.Pressing or State.Selecting or State.Resizing;
+        bool showMagnifier = _state is State.Detecting or State.Pressing or State.Selecting or State.Resizing || _picking;
         _magnifier.Visibility = showMagnifier ? Visibility.Visible : Visibility.Collapsed;
         if (showMagnifier)
         {

@@ -44,6 +44,7 @@ internal partial class SelectionToolbar : UserControl
         SizeMedium.IsChecked = true;
         ((ToggleButton)Swatches.Children[0]).IsChecked = true;
         SetMosaicStrength(Annotations.MosaicAnnotation.DefaultStrength);
+        SetMosaicStyle(blur: false);
         PaletteHost.Content = _palette;
         _palette.ColorPicked += color =>
         {
@@ -67,6 +68,39 @@ internal partial class SelectionToolbar : UserControl
     public event Action? CancelRequested;
     public event Action? RecordRequested;
     public event Action? OcrRequested;
+
+    /// <summary>Raised with true for blur, false for mosaic blocks.</summary>
+    public event Action<bool>? MosaicStyleChanged;
+
+    /// <summary>Raised when the eyedropper is turned on (true) or off (false).</summary>
+    public event Action<bool>? EyedropperToggled;
+
+    public bool MosaicBlur => BlurStyle.IsChecked == true;
+
+    public void SetMosaicStyle(bool blur)
+    {
+        BlurStyle.IsChecked = blur;
+        PixelateStyle.IsChecked = !blur;
+    }
+
+    private void OnMosaicStyleClick(object sender, RoutedEventArgs e)
+    {
+        bool blur = sender == BlurStyle;
+        SetMosaicStyle(blur);
+        MosaicStyleChanged?.Invoke(blur);
+    }
+
+    private void OnEyedropperClick(object sender, RoutedEventArgs e) => EyedropperToggled?.Invoke(EyedropperToggle.IsChecked == true);
+
+    public void SetEyedropperActive(bool active) => EyedropperToggle.IsChecked = active;
+
+    /// <summary>Selects a color picked from the screen, as if chosen in the palette.</summary>
+    public void PickColor(Color color)
+    {
+        ShowColor(color);
+        _palette.SetColor(color);
+        ColorChanged?.Invoke(color);
+    }
 
     /// <summary>Raised with the bold and background state when either text style toggle changes.</summary>
     public event Action<bool, bool>? TextStyleChanged;

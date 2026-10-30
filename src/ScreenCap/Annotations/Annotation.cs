@@ -41,7 +41,19 @@ internal abstract class Annotation
     public virtual Point[] Handles => [];
 
     /// <summary>Extends the shape while it is being drawn.</summary>
-    public virtual void Update(Point point) { }
+    /// <param name="constrain">Shift held: squares, circles, 45° arrows and straight strokes.</param>
+    public virtual void Update(Point point, bool constrain = false) { }
+
+    /// <summary><paramref name="to"/> moved onto the nearest 45° direction from <paramref name="from"/>, same length.</summary>
+    public static Point SnapToAngle(Point from, Point to)
+    {
+        var v = to - from;
+        if (v.Length < 1)
+            return to;
+        double step = Math.PI / 4;
+        double angle = Math.Round(Math.Atan2(v.Y, v.X) / step) * step;
+        return from + new Vector(Math.Cos(angle), Math.Sin(angle)) * v.Length;
+    }
 
     public abstract void Render(DrawingContext dc);
 
@@ -117,7 +129,15 @@ internal abstract class DragAnnotation : Annotation
     public override bool IsEmpty => Bounds.Width < 2 && Bounds.Height < 2;
     public override Point[] Handles => RectHandles.Points(Bounds);
 
-    public override void Update(Point point) => End = point;
+    public override void Update(Point point, bool constrain = false) => End = constrain ? Constrain(point) : point;
+
+    /// <summary>Default constraint: a square box (circle for ellipses).</summary>
+    protected virtual Point Constrain(Point point)
+    {
+        var v = point - Start;
+        double side = Math.Max(Math.Abs(v.X), Math.Abs(v.Y));
+        return Start + new Vector(v.X < 0 ? -side : side, v.Y < 0 ? -side : side);
+    }
 
     public override void MoveFrom(Annotation origin, Vector delta)
     {
@@ -159,6 +179,8 @@ internal sealed class ArrowAnnotation(Point start, Color color, double size, dou
 
     // The two ends rather than a bounding box.
     public override Point[] Handles => [Start, End];
+
+    protected override Point Constrain(Point point) => SnapToAngle(Start, point);
 
     public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
     {
@@ -214,9 +236,11 @@ internal class PenAnnotation : Annotation
         }
     }
 
-    public override void Update(Point point)
+    public override void Update(Point point, bool constrain = false)
     {
-        if (_points[^1] != point)
+        if (constrain)
+            _points = [_points[0], SnapToAngle(_points[0], point)]; // straight stroke
+        else if (_points[^1] != point)
             _points.Add(point);
     }
 
@@ -271,7 +295,7 @@ internal sealed class NumberAnnotation(Point center, int number, Color color, do
 
     public override Rect Bounds => new(Center.X - Radius, Center.Y - Radius, 2 * Radius, 2 * Radius);
 
-    public override void Update(Point point) => Center = point;
+    public override void Update(Point point, bool constrain = false) => Center = point;
 
     public override bool HitTest(Point point, double tolerance) => (point - Center).Length <= Radius + tolerance;
 
@@ -353,8 +377,11 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
         FontSizeFor(Size, Scale), new SolidColorBrush(foreground), 1.0);
 }
 
-/// <summary>Pixelates the dragged area using block-averaged colors from the original snapshot.</summary>
-internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int strength, double scale)
+/// <summary>
+/// Hides the dragged area using the original snapshot: pixelated into block-averaged colors,
+/// or, with <see cref="Blur"/>, a gaussian-like blur.
+/// </summary>
+internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int strength, double scale, bool blur = false)
     : DragAnnotation(start, Colors.Transparent, 0, scale)
 {
     public const int MinStrength = 1;
@@ -365,12 +392,19 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
     private BitmapSource? _cache;
     private Rect _cacheRect;
     private int _cacheBlock;
+    private bool _cacheBlur;
+
+    /// <summary>Smooth blur instead of mosaic blocks.</summary>
+    public bool Blur { get; set; } = blur;
 
     /// <summary>Blur strength 1–10; higher means larger mosaic blocks.</summary>
     public int Strength { get; set; } = Math.Clamp(strength, MinStrength, MaxStrength);
 
     // 1 → 5px, 4 → 14px, 10 → 32px blocks (in DIPs).
     private int BlockSize => Math.Max(3, (int)Math.Round((2 + Strength * 3) * Scale));
+
+    // 1 → 3px, 4 → 9px, 10 → 21px box radius (in DIPs); three passes approximate a gaussian.
+    internal int BlurRadius => Math.Max(1, (int)Math.Round((1 + Strength * 2) * Scale));
 
     public override bool HitTest(Point point, double tolerance) => Bounds.Contains(point);
 
@@ -379,22 +413,24 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
         var rect = PixelRect();
         if (rect.Width < 1 || rect.Height < 1)
             return;
-        if (_cache == null || rect != _cacheRect || BlockSize != _cacheBlock)
+        int amount = Blur ? BlurRadius : BlockSize;
+        if (_cache == null || rect != _cacheRect || amount != _cacheBlock || Blur != _cacheBlur)
         {
-            _cache = Pixelate(rect, BlockSize);
+            _cache = Blur ? BlurRegion(rect, BlurRadius) : Pixelate(rect, BlockSize);
             _cacheRect = rect;
-            _cacheBlock = BlockSize;
+            _cacheBlock = amount;
+            _cacheBlur = Blur;
         }
         dc.DrawImage(_cache, rect);
     }
 
+    /// <summary>The area in whole pixels, clipped to the snapshot.</summary>
     private Rect PixelRect()
     {
         var b = Bounds;
-        b.Intersect(new Rect(0, 0, snapshot.Width, snapshot.Height));
-        if (b.IsEmpty)
-            return Rect.Empty;
-        return new Rect(Math.Floor(b.X), Math.Floor(b.Y), Math.Ceiling(b.Width), Math.Ceiling(b.Height));
+        double left = Math.Max(0, Math.Floor(b.Left)), top = Math.Max(0, Math.Floor(b.Top));
+        double right = Math.Min(snapshot.Width, Math.Ceiling(b.Right)), bottom = Math.Min(snapshot.Height, Math.Ceiling(b.Bottom));
+        return right > left && bottom > top ? new Rect(left, top, right - left, bottom - top) : Rect.Empty;
     }
 
     private BitmapSource Pixelate(Rect rect, int blockSize)
@@ -439,5 +475,79 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
         var bitmap = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgr32, null, output, stride);
         bitmap.Freeze();
         return bitmap;
+    }
+
+    /// <summary>
+    /// Three horizontal + vertical box-blur passes (≈ gaussian). Samples come from a margin around the
+    /// area so the edges blend with their surroundings instead of darkening.
+    /// </summary>
+    private BitmapSource BlurRegion(Rect rect, int radius)
+    {
+        int margin = radius * 3;
+        int x0 = Math.Max(0, (int)rect.X - margin), y0 = Math.Max(0, (int)rect.Y - margin);
+        int x1 = Math.Min(snapshot.Width, (int)(rect.X + rect.Width) + margin);
+        int y1 = Math.Min(snapshot.Height, (int)(rect.Y + rect.Height) + margin);
+        int w = x1 - x0, h = y1 - y0;
+
+        // Work in planar float channels.
+        var channels = new float[3][];
+        for (int c = 0; c < 3; c++)
+        {
+            var plane = channels[c] = new float[w * h];
+            for (int y = 0; y < h; y++)
+            {
+                int src = (y0 + y) * snapshot.Stride + x0 * 4 + c;
+                for (int x = 0; x < w; x++, src += 4)
+                    plane[y * w + x] = snapshot.Pixels[src];
+            }
+        }
+
+        var scratch = new float[Math.Max(w, h)];
+        foreach (var plane in channels)
+        {
+            for (int pass = 0; pass < 3; pass++)
+            {
+                for (int y = 0; y < h; y++)
+                    BoxBlur(plane, y * w, 1, w, radius, scratch);
+                for (int x = 0; x < w; x++)
+                    BoxBlur(plane, x, w, h, radius, scratch);
+            }
+        }
+
+        int ox = (int)rect.X - x0, oy = (int)rect.Y - y0, rw = (int)rect.Width, rh = (int)rect.Height;
+        int stride = rw * 4;
+        var output = new byte[stride * rh];
+        for (int y = 0; y < rh; y++)
+        {
+            for (int x = 0; x < rw; x++)
+            {
+                int i = (oy + y) * w + ox + x, o = y * stride + x * 4;
+                output[o] = (byte)Math.Clamp(channels[0][i] + 0.5f, 0, 255);
+                output[o + 1] = (byte)Math.Clamp(channels[1][i] + 0.5f, 0, 255);
+                output[o + 2] = (byte)Math.Clamp(channels[2][i] + 0.5f, 0, 255);
+                output[o + 3] = 255;
+            }
+        }
+
+        var bitmap = BitmapSource.Create(rw, rh, 96, 96, PixelFormats.Bgr32, null, output, stride);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
+    /// <summary>In-place running-sum box blur of one row or column; samples past the ends repeat the edge.</summary>
+    private static void BoxBlur(float[] data, int start, int step, int count, int radius, float[] scratch)
+    {
+        float sum = 0;
+        for (int k = -radius; k <= radius; k++)
+            sum += data[start + Math.Clamp(k, 0, count - 1) * step];
+        float scale = 1f / (2 * radius + 1);
+        for (int i = 0; i < count; i++)
+        {
+            scratch[i] = sum * scale;
+            int add = Math.Min(i + radius + 1, count - 1), remove = Math.Max(i - radius, 0);
+            sum += data[start + add * step] - data[start + remove * step];
+        }
+        for (int i = 0; i < count; i++)
+            data[start + i * step] = scratch[i];
     }
 }
