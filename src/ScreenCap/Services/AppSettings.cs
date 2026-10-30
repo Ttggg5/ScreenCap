@@ -147,6 +147,13 @@ internal static class AppSettings
         set => Set("HighlightClicks", value ? "1" : "0");
     }
 
+    /// <summary>Show the keys pressed (e.g. "Ctrl + C") at the bottom of recordings.</summary>
+    public static bool ShowKeystrokes
+    {
+        get => Get("ShowKeystrokes") == "1";
+        set => Set("ShowKeystrokes", value ? "1" : "0");
+    }
+
     /// <summary>Font for text annotations; remembered from the last one chosen.</summary>
     public static string TextFont
     {

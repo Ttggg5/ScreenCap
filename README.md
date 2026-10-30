@@ -13,7 +13,7 @@
 - 可選擇把滑鼠游標也截進去
 
 **標註**
-- 矩形、橢圓、箭頭、直線、畫筆、螢光筆、序號標記、文字（可選字型，設粗體、斜體、底線、底色）、馬賽克或高斯模糊（可調強度）、聚光燈（框選範圍以外調暗，可調暗度）
+- 矩形、橢圓、箭頭、直線、折線、畫筆、螢光筆、序號標記、文字（可選字型，設粗體、斜體、底線、底色）、馬賽克或高斯模糊（可調強度）、聚光燈（框選範圍以外調暗，可調暗度）
 - 粗細與文字大小用滑桿調整，也能直接輸入數值，每種工具各自記住；矩形與橢圓可以填滿；線條可以改成虛線；標註可以調不透明度
 - 按住 `Shift` 畫正方形、正圓、45° 箭頭與直線
 - 畫好的標註在完成截圖前都能再選取、移動、調整大小、改顏色
@@ -38,7 +38,7 @@
 **錄影**
 - 錄下任意範圍，滑鼠游標也會錄進去
 - 可以暫停 / 繼續，暫停的時間不會出現在影片中
-- 可標示滑鼠點擊：按下時游標周圍出現圓圈，適合錄操作教學
+- 可標示滑鼠點擊，並在畫面下方顯示按下的按鍵（例如 `Ctrl + C`），適合錄操作教學
 - GIF：每秒 10 格，只編碼有變化的部分，畫面靜止時檔案很小
 - MP4：每秒 30 格，使用 Windows 內建的 H.264 編碼器
 - 錄影範圍的紅框和控制列不會被錄進去，控制列可以拖曳移開；存檔後檔案會同時複製到剪貼簿
@@ -71,7 +71,7 @@
 ## 系統需求
 
 - Windows 10 2004（組建 19041）或更新版本，建議 Windows 11
-- 執行：[.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+- 執行：單一 exe 版不需要另外安裝；一般版需要 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
 - 建置：.NET 10 SDK
 - 文字辨識需要 Windows 已安裝對應語言的 OCR 元件：到「設定 → 時間與語言 → 語言與地區」新增語言，例如中文（台灣）
 
@@ -84,9 +84,14 @@ dotnet run --project src/ScreenCap
 # 執行測試
 dotnet test
 
-# 發佈到 publish 資料夾（需要目標電腦有安裝 .NET 10 Desktop Runtime）
+# 發佈成單一 exe 到 publish 資料夾：內含 .NET，目標電腦不用另外安裝
+dotnet publish src/ScreenCap -p:PublishProfile=SingleFile
+
+# 或發佈成一般資料夾（較小，但目標電腦要有 .NET 10 Desktop Runtime）
 dotnet publish src/ScreenCap -c Release -r win-x64 --self-contained false -o publish
 ```
+
+單一 exe 約 190 MB，複製到任何 Windows 10 2004 以上的電腦都能直接執行。加上 `-p:EnableCompressionInSingleFile=true` 可以壓縮到約 80 MB，但啟動時要把程式解壓到記憶體，常駐時會多佔約 120 MB，所以預設不壓縮。
 
 啟動後只會出現系統匣圖示。ScreenCap 同一時間只會執行一份，重複開啟時新的會直接結束。
 

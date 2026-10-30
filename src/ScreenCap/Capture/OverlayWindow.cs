@@ -51,7 +51,7 @@ internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, 
 /// </summary>
 internal sealed class OverlayWindow : Window
 {
-    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing, AnnotationMoving, AnnotationResizing }
+    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing, Polyline, AnnotationMoving, AnnotationResizing }
 
     private const double HandleSize = 7;  // DIP
     private const double DragThreshold = 3; // physical px
@@ -95,6 +95,7 @@ internal sealed class OverlayWindow : Window
     private int _opacity = 100; // percent
     private bool _picking; // eyedropper: the next click picks a color from the screen
     private Annotation? _drawing;
+    private bool _polylinePressed; // a press while drawing a polyline, to tell a drag from a click on release
 
     // Editing of existing annotations
     private Annotation? _selected;
@@ -258,6 +259,7 @@ internal sealed class OverlayWindow : Window
         _toolbar.ToolChanged += tool =>
         {
             CommitText();
+            FinishPolyline();
             _tool = tool;
             Select(null);
             Refresh();
@@ -419,6 +421,25 @@ internal sealed class OverlayWindow : Window
                 CaptureMouse();
                 break;
 
+            case State.Polyline when _drawing is PolylineAnnotation polyline:
+                if (e.ClickCount >= 2)
+                {
+                    FinishPolyline(); // the first click of the double-click already placed the last corner
+                    break;
+                }
+                // Clicking the first point again closes the shape.
+                if (polyline.Points.Count >= 3 && (p - polyline.Points[0]).Length <= HandleSize * _scale)
+                {
+                    FinishPolyline(close: true);
+                    break;
+                }
+                polyline.Update(p, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
+                polyline.AddPoint();
+                _press = p;
+                _polylinePressed = true;
+                _annotationLayer.InvalidateVisual();
+                break;
+
             case State.Selected:
                 bool inside = _sel.Contains(p);
 
@@ -467,6 +488,14 @@ internal sealed class OverlayWindow : Window
                 else if (inside && _tool == ToolKind.Text)
                 {
                     BeginText(p);
+                }
+                else if (inside && _tool == ToolKind.Polyline)
+                {
+                    _drawing = CreateAnnotation(p);
+                    _annotationLayer.Current = _drawing;
+                    _state = State.Polyline;
+                    _press = p;
+                    _polylinePressed = true;
                 }
                 else if (inside)
                 {
@@ -517,6 +546,7 @@ internal sealed class OverlayWindow : Window
                 break;
 
             case State.Drawing:
+            case State.Polyline:
                 _drawing?.Update(p, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 _annotationLayer.InvalidateVisual();
                 break;
@@ -547,7 +577,7 @@ internal sealed class OverlayWindow : Window
     /// <summary>Re-applies the Shift constraint to the shape being drawn when Shift is pressed or released.</summary>
     private void UpdateDrawingConstraint()
     {
-        if (_state != State.Drawing || _drawing == null)
+        if (_state is not (State.Drawing or State.Polyline) || _drawing == null)
             return;
         _drawing.Update(_cursor, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
         _annotationLayer.InvalidateVisual();
@@ -584,6 +614,16 @@ internal sealed class OverlayWindow : Window
                 _state = State.Selected;
                 break;
 
+            case State.Polyline when _drawing is PolylineAnnotation polyline && _polylinePressed:
+                // Press, drag and release draws a segment too.
+                _polylinePressed = false;
+                if ((polyline.Preview is { } end ? (end - _press).Length : 0) > DragThreshold)
+                {
+                    polyline.AddPoint();
+                    _annotationLayer.InvalidateVisual();
+                }
+                break;
+
             case State.AnnotationMoving:
             case State.AnnotationResizing:
                 _editOrigin = null;
@@ -612,6 +652,8 @@ internal sealed class OverlayWindow : Window
         e.Handled = true;
         if (_picking)
             StopPicking();
+        else if (_state == State.Polyline)
+            FinishPolyline();
         else if (_textBox != null)
             CommitText();
         else if (_selected != null)
@@ -630,7 +672,7 @@ internal sealed class OverlayWindow : Window
         int annotationHandle = HitAnnotationHandle(p);
         if (annotationHandle >= 0)
         {
-            Cursor = _selected is LineAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
+            Cursor = _selected is LineAnnotation or PolylineAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
             return;
         }
         if (HitAnnotation(p) != null)
@@ -692,10 +734,21 @@ internal sealed class OverlayWindow : Window
         var key = e.RealKey();
         switch (key)
         {
+            case Key.Enter when _state == State.Polyline:
+                FinishPolyline();
+                break;
+            case Key.Escape when _state == State.Polyline:
+                CancelPolyline();
+                break;
+            case Key.Back or Key.Delete when _state == State.Polyline && _drawing is PolylineAnnotation polyline:
+                polyline.RemoveLastPoint();
+                polyline.Update(_cursor, shift);
+                _annotationLayer.InvalidateVisual();
+                break;
             case Key.Escape when _picking:
                 StopPicking();
                 break;
-            case Key.LeftShift or Key.RightShift when _state == State.Drawing:
+            case Key.LeftShift or Key.RightShift when _state is State.Drawing or State.Polyline:
                 UpdateDrawingConstraint();
                 break;
             case Key.Escape when _selected != null:
@@ -891,6 +944,7 @@ internal sealed class OverlayWindow : Window
     private void ResetSelection()
     {
         CommitText();
+        CancelPolyline();
         Select(null);
         _annotations.Clear();
         InvalidateAnnotations();
@@ -911,6 +965,7 @@ internal sealed class OverlayWindow : Window
         ToolKind.Ellipse => new EllipseAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Arrow => new ArrowAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Line => new LineAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Polyline => new PolylineAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Highlighter => new HighlighterAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, SizeOf(_tool), _scale),
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
@@ -927,6 +982,7 @@ internal sealed class OverlayWindow : Window
         EllipseAnnotation => ToolKind.Ellipse,
         ArrowAnnotation => ToolKind.Arrow,
         LineAnnotation => ToolKind.Line,
+        PolylineAnnotation => ToolKind.Polyline,
         HighlighterAnnotation => ToolKind.Highlighter,
         PenAnnotation => ToolKind.Pen,
         NumberAnnotation => ToolKind.Number,
@@ -1154,9 +1210,41 @@ internal sealed class OverlayWindow : Window
         Refresh();
     }
 
+    /// <summary>Ends the polyline being drawn and keeps it (if it has at least one segment).</summary>
+    private void FinishPolyline(bool close = false)
+    {
+        if (_state != State.Polyline || _drawing is not PolylineAnnotation polyline)
+            return;
+        polyline.Finish(close);
+        _drawing = null;
+        _annotationLayer.Current = null;
+        _state = State.Selected;
+        _polylinePressed = false;
+        if (!polyline.IsEmpty)
+        {
+            _annotations.Add(polyline);
+            Select(polyline);
+        }
+        InvalidateAnnotations();
+        Refresh();
+    }
+
+    private void CancelPolyline()
+    {
+        if (_state != State.Polyline)
+            return;
+        _drawing = null;
+        _annotationLayer.Current = null;
+        _state = State.Selected;
+        _polylinePressed = false;
+        InvalidateAnnotations();
+        Refresh();
+    }
+
     private void Undo()
     {
         CommitText();
+        FinishPolyline();
         // Undo restores clones, so the selected instance is no longer part of the list.
         Select(null);
         if (_annotations.Undo())
@@ -1176,6 +1264,7 @@ internal sealed class OverlayWindow : Window
 
     private void Finish(OverlayAction action)
     {
+        FinishPolyline(); // keep a polyline still being drawn
         if (_state != State.Selected || !HasSelection)
             return;
         int x = (int)_sel.X + _snap.Left, y = (int)_sel.Y + _snap.Top;
@@ -1261,7 +1350,7 @@ internal sealed class OverlayWindow : Window
         }
 
         // Toolbar
-        bool showToolbar = has && _state is State.Selected or State.Drawing or State.AnnotationMoving or State.AnnotationResizing;
+        bool showToolbar = has && _state is State.Selected or State.Drawing or State.Polyline or State.AnnotationMoving or State.AnnotationResizing;
         _toolbar.Visibility = showToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (showToolbar)
         {

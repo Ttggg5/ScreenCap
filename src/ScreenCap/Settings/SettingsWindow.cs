@@ -22,6 +22,7 @@ internal sealed class SettingsWindow : Window
     private readonly ComboBox _theme = new();
     private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _clicks = new() { Content = "錄影時標示滑鼠點擊", IsChecked = AppSettings.HighlightClicks, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly CheckBox _keys = new() { Content = "錄影時顯示按下的按鍵（例如 Ctrl + C）", IsChecked = AppSettings.ShowKeystrokes, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _copyPath = new() { Content = "存檔後複製檔案路徑", IsChecked = AppSettings.CopyPathAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly CheckBox _reveal = new() { Content = "存檔後在檔案總管中顯示檔案", IsChecked = AppSettings.RevealAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly ComboBox _confirm = new();
@@ -78,6 +79,7 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(_startup);
         body.Children.Add(_cursor);
         body.Children.Add(_clicks);
+        body.Children.Add(_keys);
 
         var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
@@ -153,6 +155,7 @@ internal sealed class SettingsWindow : Window
         _theme.SelectedIndex = (int)AppTheme.System;
         _cursor.IsChecked = false;
         _clicks.IsChecked = false;
+        _keys.IsChecked = false;
         _copyPath.IsChecked = false;
         _reveal.IsChecked = false;
         _confirm.SelectedIndex = 0;
@@ -174,6 +177,7 @@ internal sealed class SettingsWindow : Window
         AppSettings.FileNamePattern = Pattern;
         AppSettings.CaptureCursor = _cursor.IsChecked == true;
         AppSettings.HighlightClicks = _clicks.IsChecked == true;
+        AppSettings.ShowKeystrokes = _keys.IsChecked == true;
         AppSettings.CopyPathAfterSave = _copyPath.IsChecked == true;
         AppSettings.RevealAfterSave = _reveal.IsChecked == true;
         AppSettings.ConfirmAction = (Capture.OverlayAction)((ComboBoxItem)_confirm.SelectedItem).Tag;

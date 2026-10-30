@@ -129,6 +129,11 @@
                         <Line X1="2" Y1="14" X2="14" Y2="2" Width="16" Height="16" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
                     </ToggleButton>
+                    <ToggleButton x:Name="PolylineTool" Style="{StaticResource ToolToggle}" ToolTip="折線：逐點點擊，雙擊或 Enter 結束" Click="OnToolClick">
+                        <Polyline Points="1.5,13 6,4.5 10.5,10.5 15,2.5" Width="17" Height="16" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
                     <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#xE70F;" Click="OnToolClick" />
                     <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" Click="OnToolClick" />
                     <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="&#xE97E;" Click="OnToolClick" />

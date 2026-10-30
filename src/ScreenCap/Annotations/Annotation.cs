@@ -326,6 +326,102 @@ internal class PenAnnotation : Annotation
     }
 }
 
+/// <summary>
+/// Connected straight segments, placed one click at a time. Closing on the first point makes a polygon.
+/// While it is being drawn, <see cref="Preview"/> is the rubber-band end following the cursor.
+/// </summary>
+internal sealed class PolylineAnnotation : Annotation
+{
+    private List<Point> _points = new();
+
+    public PolylineAnnotation(Point start, Color color, double size, double scale) : base(color, size, scale)
+    {
+        _points.Add(start);
+        Preview = start;
+    }
+
+    public override bool CanDash => true;
+
+    public IReadOnlyList<Point> Points => _points;
+
+    /// <summary>Where the next segment would end; null once drawing is finished.</summary>
+    public Point? Preview { get; private set; }
+
+    public bool Closed { get; private set; }
+
+    public override bool IsEmpty => _points.Count < 2;
+
+    public override Point[] Handles => _points.ToArray();
+
+    private IEnumerable<Point> Drawn => Preview is { } p ? _points.Append(p) : _points;
+
+    public override Rect Bounds
+    {
+        get
+        {
+            var points = Drawn.ToList();
+            var r = new Rect(new Point(points.Min(p => p.X), points.Min(p => p.Y)), new Point(points.Max(p => p.X), points.Max(p => p.Y)));
+            r.Inflate(Thickness / 2, Thickness / 2);
+            return r;
+        }
+    }
+
+    /// <summary>Moves the rubber band; with <paramref name="constrain"/> the segment snaps to 45° steps.</summary>
+    public override void Update(Point point, bool constrain = false) =>
+        Preview = constrain ? SnapToAngle(_points[^1], point) : point;
+
+    /// <summary>Fixes the rubber-band end as a new corner.</summary>
+    public void AddPoint()
+    {
+        if (Preview is { } p && p != _points[^1])
+            _points.Add(p);
+    }
+
+    /// <summary>Removes the last corner (not the first point).</summary>
+    public void RemoveLastPoint()
+    {
+        if (_points.Count > 1)
+            _points.RemoveAt(_points.Count - 1);
+    }
+
+    /// <summary>Ends drawing; <paramref name="close"/> joins the last point back to the first.</summary>
+    public void Finish(bool close = false)
+    {
+        Preview = null;
+        Closed = close && _points.Count >= 3;
+    }
+
+    public override void MoveFrom(Annotation origin, Vector delta) =>
+        _points = ((PolylineAnnotation)origin)._points.Select(p => p + delta).ToList();
+
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    {
+        var o = (PolylineAnnotation)origin;
+        _points = new List<Point>(o._points);
+        _points[handle] = o._points[handle] + delta;
+    }
+
+    protected override void OnCloned() => _points = new List<Point>(_points);
+
+    protected override Geometry GetOutline()
+    {
+        var points = Drawn.ToList();
+        var geometry = new StreamGeometry();
+        using (var ctx = geometry.Open())
+        {
+            ctx.BeginFigure(points[0], false, Closed);
+            ctx.PolyLineTo(points.Skip(1).ToList(), true, true);
+        }
+        geometry.Freeze();
+        return geometry;
+    }
+
+    protected override void Render(DrawingContext dc)
+    {
+        if (Drawn.Count() >= 2)
+            dc.DrawGeometry(null, CreatePen(), GetOutline());
+    }
+}
 /// <summary>Translucent wide stroke for marking text, drawn like the pen.</summary>
 internal sealed class HighlighterAnnotation(Point start, Color color, double size, double scale)
     : PenAnnotation(start, color, size, scale)

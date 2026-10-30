@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using ScreenCap.Native;
 using ScreenCap.Services;
 
 namespace ScreenCap.Recording;
@@ -22,6 +23,7 @@ internal static class RecordingSession
     private static string? _tempPath;
     private static RecordingFormat _format;
     private static string? _title;
+    private static KeystrokeMonitor? _keys;
     private static bool _stopping;
 
     /// <summary>True from the start of recording until the file has been saved or discarded.</summary>
@@ -53,10 +55,11 @@ internal static class RecordingSession
         _tempPath = temp;
         int width = region.Width, height = region.Height;
         bool clicks = AppSettings.HighlightClicks;
+        var keys = _keys = AppSettings.ShowKeystrokes ? new KeystrokeMonitor() : null; // the hook needs the UI thread
         var recorder = _format == RecordingFormat.Mp4
-            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond), clicks)
+            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond), clicks, keys)
             : new ScreenRecorder(region, GifFramesPerSecond, () => new GifEncoder(
-                new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16), width, height, ownsStream: true), clicks);
+                new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16), width, height, ownsStream: true), clicks, keys);
         try
         {
             await recorder.StartAsync();
@@ -65,6 +68,7 @@ internal static class RecordingSession
         {
             if (File.Exists(temp))
                 File.Delete(temp);
+            DisposeKeys();
             IsActive = false;
             MessageBox.Show($"無法開始錄製：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
@@ -111,8 +115,15 @@ internal static class RecordingSession
         {
             // Exiting anyway; nothing to report.
         }
+        DisposeKeys();
         if (_tempPath != null && File.Exists(_tempPath))
             File.Delete(_tempPath);
+    }
+
+    private static void DisposeKeys()
+    {
+        _keys?.Dispose();
+        _keys = null;
     }
 
     private static async void Finish(bool save)
@@ -137,6 +148,7 @@ internal static class RecordingSession
         _frame = null;
         _bar = null;
         _recorder = null;
+        DisposeKeys();
         string temp = _tempPath!;
 
         try

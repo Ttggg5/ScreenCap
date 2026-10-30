@@ -147,6 +147,43 @@ internal static class NativeMethods
     [DllImport("gdi32.dll")] public static extern IntPtr GetStockObject(int obj);
     [DllImport("gdi32.dll")] public static extern bool Ellipse(IntPtr hdc, int left, int top, int right, int bottom);
 
+    public delegate IntPtr LowLevelKeyboardProc(int code, IntPtr message, IntPtr data);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetWindowsHookEx(int hookType, LowLevelKeyboardProc proc, IntPtr module, uint threadId);
+
+    [DllImport("user32.dll")] public static extern bool UnhookWindowsHookEx(IntPtr hook);
+    [DllImport("user32.dll")] public static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr GetModuleHandle(string? name);
+
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
+    public static extern IntPtr CreateFont(int height, int width, int escapement, int orientation, int weight, uint italic, uint underline,
+        uint strikeOut, uint charSet, uint outPrecision, uint clipPrecision, uint quality, uint pitchAndFamily, string face);
+
+    [DllImport("gdi32.dll")] public static extern IntPtr CreateSolidBrush(uint color);
+    [DllImport("gdi32.dll")] public static extern bool RoundRect(IntPtr hdc, int left, int top, int right, int bottom, int width, int height);
+    [DllImport("gdi32.dll")] public static extern int SetBkMode(IntPtr hdc, int mode);
+    [DllImport("gdi32.dll")] public static extern uint SetTextColor(IntPtr hdc, uint color);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool TextOut(IntPtr hdc, int x, int y, string text, int length);
+    [DllImport("gdi32.dll", CharSet = CharSet.Unicode)] public static extern bool GetTextExtentPoint32(IntPtr hdc, string text, int length, out SIZE size);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SIZE
+    {
+        public int cx, cy;
+    }
+
+    public const int WH_KEYBOARD_LL = 13;
+    public const int WM_KEYDOWN = 0x0100;
+    public const int WM_SYSKEYDOWN = 0x0104;
+    public const int VK_SHIFT = 0x10;
+    public const int VK_CONTROL = 0x11;
+    public const int VK_MENU = 0x12;
+    public const int VK_LWIN = 0x5B;
+    public const int VK_RWIN = 0x5C;
+    public const int NULL_PEN = 8;
+    public const int TRANSPARENT = 1;
+
     public const int VK_LBUTTON = 0x01;
     public const int VK_RBUTTON = 0x02;
     public const int SM_SWAPBUTTON = 23;
