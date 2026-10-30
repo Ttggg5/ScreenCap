@@ -23,6 +23,7 @@ internal enum OverlayAction
     Record,
     QuickSave,
     Ocr,
+    ScrollCapture,
 }
 
 internal enum OverlayMode
@@ -318,6 +319,7 @@ internal sealed class OverlayWindow : Window
         };
         _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
         _toolbar.OcrRequested += () => Finish(OverlayAction.Ocr);
+        _toolbar.ScrollCaptureRequested += () => Finish(OverlayAction.ScrollCapture);
         if (_mode == OverlayMode.Record)
             _toolbar.SetRecordMode();
         else if (_mode == OverlayMode.EditPin)
@@ -1072,9 +1074,10 @@ internal sealed class OverlayWindow : Window
             CaptureSession.AddHistory(new Int32Rect(x, y, (int)_sel.Width, (int)_sel.Height));
 
         // In record mode every confirm action (Enter, double-click, ...) starts recording.
-        if (_mode == OverlayMode.Record || action == OverlayAction.Record)
+        if (_mode == OverlayMode.Record || action is OverlayAction.Record or OverlayAction.ScrollCapture)
         {
-            Result = new OverlayResult(OverlayAction.Record, null, x, y, (int)_sel.Width, (int)_sel.Height);
+            var region = _mode == OverlayMode.Record ? OverlayAction.Record : action;
+            Result = new OverlayResult(region, null, x, y, (int)_sel.Width, (int)_sel.Height);
             Close();
             return;
         }

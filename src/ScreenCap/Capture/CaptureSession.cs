@@ -3,6 +3,7 @@ using System.Windows.Media.Imaging;
 using ScreenCap.Ocr;
 using ScreenCap.Pin;
 using ScreenCap.Recording;
+using ScreenCap.Scrolling;
 using ScreenCap.Services;
 
 namespace ScreenCap.Capture;
@@ -31,7 +32,7 @@ internal static class CaptureSession
     /// <summary>Takes a screenshot after a countdown, e.g. to capture an open menu or tooltip.</summary>
     public static void StartDelayed(int seconds)
     {
-        if (IsActive || RecordingSession.IsActive || _countingDown)
+        if (IsActive || RecordingSession.IsActive || ScrollCaptureSession.IsActive || _countingDown)
             return;
         _countingDown = true;
         var countdown = CountdownWindow.Start(seconds, () => Start());
@@ -41,7 +42,7 @@ internal static class CaptureSession
     /// <param name="recordMode">Select a region to record instead of taking a screenshot.</param>
     public static void Start(bool recordMode = false)
     {
-        if (IsActive || RecordingSession.IsActive)
+        if (IsActive || RecordingSession.IsActive || ScrollCaptureSession.IsActive)
             return;
         IsActive = true;
         try
@@ -69,7 +70,7 @@ internal static class CaptureSession
     /// </summary>
     public static async void EditImage(BitmapSource image, int screenX, int screenY, Action<BitmapSource?, int, int> done)
     {
-        if (IsActive || RecordingSession.IsActive)
+        if (IsActive || RecordingSession.IsActive || ScrollCaptureSession.IsActive)
         {
             done(null, screenX, screenY);
             return;
@@ -121,6 +122,8 @@ internal static class CaptureSession
     {
         if (result.Action == OverlayAction.Record)
             RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height));
+        else if (result.Action == OverlayAction.ScrollCapture)
+            ScrollCaptureSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height));
         else if (result.Action == OverlayAction.Pin && result.Image != null)
             PinWindow.ShowAt(result.Image, result.ScreenX, result.ScreenY);
         else

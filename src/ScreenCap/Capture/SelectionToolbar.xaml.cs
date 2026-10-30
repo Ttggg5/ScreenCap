@@ -68,6 +68,7 @@ internal partial class SelectionToolbar : UserControl
     public event Action? CancelRequested;
     public event Action? RecordRequested;
     public event Action? OcrRequested;
+    public event Action? ScrollCaptureRequested;
 
     /// <summary>Raised with true for blur, false for mosaic blocks.</summary>
     public event Action<bool>? MosaicStyleChanged;
@@ -117,7 +118,11 @@ internal partial class SelectionToolbar : UserControl
     private void OnTextStyleClick(object sender, RoutedEventArgs e) => TextStyleChanged?.Invoke(TextBold, TextBackground);
 
     /// <summary>Editing an existing pin: recording makes no sense there.</summary>
-    public void SetEditPinMode() => RecordButton.Visibility = Visibility.Collapsed;
+    public void SetEditPinMode()
+    {
+        RecordButton.Visibility = Visibility.Collapsed;
+        ScrollCaptureButton.Visibility = Visibility.Collapsed;
+    }
 
     /// <summary>Recording-only toolbar: just start recording and cancel.</summary>
     public void SetRecordMode()
@@ -268,4 +273,5 @@ internal partial class SelectionToolbar : UserControl
     private void OnCancel(object sender, RoutedEventArgs e) => CancelRequested?.Invoke();
     private void OnRecord(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
     private void OnOcr(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
+    private void OnScrollCapture(object sender, RoutedEventArgs e) => ScrollCaptureRequested?.Invoke();
 }

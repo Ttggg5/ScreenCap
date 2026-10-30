@@ -142,6 +142,7 @@
                     <Button Style="{StaticResource ToolButton}" ToolTip="文字辨識 (OCR)" Content="&#xE8AC;" Click="OnOcr" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
+                    <Button x:Name="ScrollCaptureButton" Style="{StaticResource ToolButton}" ToolTip="長截圖：自動捲動並拼接" Content="&#xECE7;" Click="OnScrollCapture" />
                 </StackPanel>
                 <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Visibility="Collapsed">
                     <ToggleButton x:Name="GifFormat" Style="{StaticResource ToolToggle}" Width="44" Content="GIF" ToolTip="錄成 GIF 動畫"

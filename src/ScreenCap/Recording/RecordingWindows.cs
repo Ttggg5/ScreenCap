@@ -40,18 +40,68 @@ internal abstract class RecordingChromeWindow : Window
 
     /// <summary>Positions the window in physical pixels.</summary>
     protected abstract void Place();
+
+    /// <summary>
+    /// Places a bar of the given DIP size next to <paramref name="region"/>: below it, right-aligned;
+    /// above it if there is no room; otherwise inside the top edge.
+    /// </summary>
+    protected void PlaceBar(Int32Rect region, double width, double height, double gap)
+    {
+        SetWindowPos(Handle, HWND_TOPMOST, region.X, region.Y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+        double scale = DpiScale;
+        int w = (int)Math.Round(width * scale), h = (int)Math.Round(height * scale), g = (int)Math.Round(gap * scale);
+
+        int screenTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        int screenBottom = screenTop + GetSystemMetrics(SM_CYVIRTUALSCREEN);
+        int screenLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        int x = Math.Max(screenLeft, region.X + region.Width - w);
+        int y = region.Y + region.Height + g;
+        if (y + h > screenBottom)
+            y = region.Y - g - h;
+        if (y < screenTop)
+            y = region.Y + g;
+        SetWindowPos(Handle, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
+    }
+
+    protected static Button CreateButton(string text, Color background)
+    {
+        var template = new ControlTemplate(typeof(Button));
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(BackgroundProperty));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        border.SetValue(Border.PaddingProperty, new Thickness(12, 3, 12, 4));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(content);
+        template.VisualTree = border;
+
+        return new Button
+        {
+            Content = text,
+            Template = template,
+            Background = new SolidColorBrush(background),
+            Foreground = Brushes.White,
+            FontSize = 13,
+            Margin = new Thickness(4, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Focusable = false,
+            Cursor = System.Windows.Input.Cursors.Hand,
+        };
+    }
 }
 
-/// <summary>Red frame drawn just outside the recorded region. Click-through.</summary>
+/// <summary>Frame drawn just outside the recorded region (red by default). Click-through.</summary>
 internal sealed class RecordingFrameWindow : RecordingChromeWindow
 {
     private const double Thickness = 2; // DIP
     private readonly Int32Rect _region;
-    private readonly Border _border = new() { BorderBrush = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)) };
+    private readonly Border _border;
 
-    public RecordingFrameWindow(Int32Rect region)
+    public RecordingFrameWindow(Int32Rect region, Color? color = null)
     {
         _region = region;
+        _border = new Border { BorderBrush = new SolidColorBrush(color ?? Color.FromRgb(0xE5, 0x39, 0x35)) };
         Content = _border;
     }
 
@@ -137,49 +187,5 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
         _dot.Opacity = t.Milliseconds < 500 ? 1 : 0.35; // blink
     }
 
-    protected override void Place()
-    {
-        SetWindowPos(Handle, HWND_TOPMOST, _region.X, _region.Y, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
-        double scale = DpiScale;
-        int w = (int)Math.Round(BarWidth * scale), h = (int)Math.Round(BarHeight * scale), gap = (int)Math.Round(Gap * scale);
-
-        // Below the region, right-aligned; above it if there's no room; otherwise inside the top edge.
-        int screenTop = GetSystemMetrics(SM_YVIRTUALSCREEN);
-        int screenBottom = screenTop + GetSystemMetrics(SM_CYVIRTUALSCREEN);
-        int screenLeft = GetSystemMetrics(SM_XVIRTUALSCREEN);
-        int x = Math.Max(screenLeft, _region.X + _region.Width - w);
-        int y = _region.Y + _region.Height + gap;
-        if (y + h > screenBottom)
-            y = _region.Y - gap - h;
-        if (y < screenTop)
-            y = _region.Y + gap;
-        SetWindowPos(Handle, HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
-    }
-
-    private static Button CreateButton(string text, Color background)
-    {
-        var template = new ControlTemplate(typeof(Button));
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(BackgroundProperty));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
-        border.SetValue(Border.PaddingProperty, new Thickness(12, 3, 12, 4));
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        content.SetValue(VerticalAlignmentProperty, VerticalAlignment.Center);
-        border.AppendChild(content);
-        template.VisualTree = border;
-
-        return new Button
-        {
-            Content = text,
-            Template = template,
-            Background = new SolidColorBrush(background),
-            Foreground = Brushes.White,
-            FontSize = 13,
-            Margin = new Thickness(4, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-            Focusable = false,
-            Cursor = System.Windows.Input.Cursors.Hand,
-        };
-    }
+    protected override void Place() => PlaceBar(_region, BarWidth, BarHeight, Gap);
 }

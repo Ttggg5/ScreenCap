@@ -64,6 +64,31 @@ internal sealed class ScreenSnapshot
 
 internal static class ScreenCaptureService
 {
+    /// <summary>Captures a screen region (physical pixels) as top-down BGRA, without the cursor.</summary>
+    public static byte[] CaptureRegion(Int32Rect region)
+    {
+        IntPtr screenDc = GetDC(IntPtr.Zero);
+        IntPtr memDc = CreateCompatibleDC(screenDc);
+        IntPtr hbmp = CreateCompatibleBitmap(screenDc, region.Width, region.Height);
+        IntPtr old = SelectObject(memDc, hbmp);
+        try
+        {
+            BitBlt(memDc, 0, 0, region.Width, region.Height, screenDc, region.X, region.Y, SRCCOPY);
+            SelectObject(memDc, old);
+            var header = new BITMAPINFOHEADER { biSize = 40, biWidth = region.Width, biHeight = -region.Height, biPlanes = 1, biBitCount = 32 };
+            var pixels = new byte[region.Width * region.Height * 4];
+            GetDIBits(memDc, hbmp, 0, (uint)region.Height, pixels, ref header, 0);
+            return pixels;
+        }
+        finally
+        {
+            SelectObject(memDc, old);
+            DeleteObject(hbmp);
+            DeleteDC(memDc);
+            ReleaseDC(IntPtr.Zero, screenDc);
+        }
+    }
+
     /// <param name="includeCursor">Draw the mouse cursor into the capture.</param>
     public static ScreenSnapshot CaptureVirtualScreen(bool includeCursor = false)
     {
