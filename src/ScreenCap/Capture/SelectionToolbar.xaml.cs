@@ -21,6 +21,8 @@ internal enum ToolKind
     Highlighter,
     Number,
     Text,
+    Callout,
+    Magnifier,
     Mosaic,
     Spotlight,
 }
@@ -33,7 +35,8 @@ internal readonly record struct SizeRange(double Min, double Max, double Default
     {
         ToolKind.Highlighter => new(4, 40, 16, "粗細"),
         ToolKind.Number => new(16, 64, 32, "大小"),   // circle diameter
-        ToolKind.Text => new(8, 96, 20, "大小"),      // font size
+        ToolKind.Text or ToolKind.Callout => new(8, 96, 20, "大小"), // font size
+        ToolKind.Magnifier => new(2, 8, 2, "倍率"),   // zoom factor
         _ => new(1, 20, 4, "粗細"),                  // stroke width
     };
 }
@@ -57,6 +60,8 @@ internal partial class SelectionToolbar : UserControl
             [HighlighterTool] = ToolKind.Highlighter,
             [NumberTool] = ToolKind.Number,
             [TextTool] = ToolKind.Text,
+            [CalloutTool] = ToolKind.Callout,
+            [MagnifierTool] = ToolKind.Magnifier,
             [MosaicTool] = ToolKind.Mosaic,
             [SpotlightTool] = ToolKind.Spotlight,
         };

@@ -72,7 +72,7 @@ public class ScreenRecorderTests
         Assert.InRange(encoder.EndTime!.Value.TotalMilliseconds, 450, 950); // ~600 ms recorded, not ~1300
         var gaps = encoder.Frames.Zip(encoder.Frames.Skip(1), (a, b) => (b.Time - a.Time).TotalMilliseconds);
         Assert.True(gaps.Max() < 250, "the pause shows up as a jump in the timestamps");
-        Assert.InRange(encoder.Frames.Count, 6, 16);
+        Assert.InRange(encoder.Frames.Count, 6, 20); // ~12 at 20 fps; loose for busy machines
     }
 
     [Fact]

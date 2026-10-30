@@ -31,6 +31,7 @@ public partial class App : Application
         _tray = new TrayIconHost(new TrayActions(
             Capture: () => CaptureSession.Start(),
             DelayedCapture: CaptureSession.StartDelayed,
+            ReopenLast: CaptureSession.ReopenLast,
             ToggleRecording: ToggleRecording,
             PinFromClipboard: PinFromClipboard,
             CloseAllPins: PinWindow.CloseAll,
@@ -58,6 +59,8 @@ public partial class App : Application
             failed.Add($"{AppSettings.RecordHotkey}（錄製螢幕）");
         if (!_hotkeys.Register(AppSettings.PinHotkey, PinFromClipboard))
             failed.Add($"{AppSettings.PinHotkey}（貼圖）");
+        if (!_hotkeys.Register(AppSettings.ReopenHotkey, CaptureSession.ReopenLast))
+            failed.Add($"{AppSettings.ReopenHotkey}（再次開啟上一張截圖）");
         return failed;
     }
 

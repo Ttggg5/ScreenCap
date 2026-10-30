@@ -482,7 +482,7 @@ internal readonly record struct TextStyle(bool Bold, bool Background, bool Itali
     }
 }
 
-internal sealed class TextAnnotation(string text, Point position, Color color, double size, double scale, bool bold = false, bool background = false)
+internal class TextAnnotation(string text, Point position, Color color, double size, double scale, bool bold = false, bool background = false)
     : Annotation(color, size, scale)
 {
     public static readonly FontFamily Font = new("Microsoft JhengHei UI, Segoe UI");
@@ -513,7 +513,7 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
         set => (Bold, Background, Italic, Underline, FontName) = (value.Bold, value.Background, value.Italic, value.Underline, value.FontName);
     }
 
-    private Rect TextRect
+    protected Rect TextRect
     {
         get
         {
@@ -553,7 +553,7 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
             dc.DrawText(Format(Color), Position);
     }
 
-    private FormattedText Format(Color foreground)
+    protected FormattedText Format(Color foreground)
     {
         var text = new FormattedText(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
             new Typeface(TextStyle.FamilyFor(FontName), Italic ? FontStyles.Italic : FontStyles.Normal, Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal),
@@ -605,6 +605,18 @@ internal sealed class SpotlightAnnotation(Point start, double scale, int dim = S
 internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int strength, double scale, bool blur = false)
     : DragAnnotation(start, Colors.Transparent, 0, scale)
 {
+    private ScreenSnapshot _snapshot = snapshot;
+
+    /// <summary>The screenshot the area is taken from; replaced when the annotation is pasted into another capture.</summary>
+    public ScreenSnapshot Snapshot
+    {
+        get => _snapshot;
+        set
+        {
+            _snapshot = value;
+            _cache = null;
+        }
+    }
     public const int MinStrength = 1;
     public const int MaxStrength = 10;
     public const int DefaultStrength = 4;
@@ -652,7 +664,7 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
     {
         var b = Bounds;
         double left = Math.Max(0, Math.Floor(b.Left)), top = Math.Max(0, Math.Floor(b.Top));
-        double right = Math.Min(snapshot.Width, Math.Ceiling(b.Right)), bottom = Math.Min(snapshot.Height, Math.Ceiling(b.Bottom));
+        double right = Math.Min(_snapshot.Width, Math.Ceiling(b.Right)), bottom = Math.Min(_snapshot.Height, Math.Ceiling(b.Bottom));
         return right > left && bottom > top ? new Rect(left, top, right - left, bottom - top) : Rect.Empty;
     }
 
@@ -661,7 +673,7 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
         int x0 = (int)rect.X, y0 = (int)rect.Y, w = (int)rect.Width, h = (int)rect.Height;
         int stride = w * 4;
         var output = new byte[stride * h];
-        var src = snapshot.Pixels;
+        var src = _snapshot.Pixels;
 
         for (int by = 0; by < h; by += blockSize)
         {
@@ -671,7 +683,7 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
                 long b = 0, g = 0, r = 0;
                 for (int y = 0; y < bh; y++)
                 {
-                    int i = (y0 + by + y) * snapshot.Stride + (x0 + bx) * 4;
+                    int i = (y0 + by + y) * _snapshot.Stride + (x0 + bx) * 4;
                     for (int x = 0; x < bw; x++, i += 4)
                     {
                         b += src[i];
@@ -708,8 +720,8 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
     {
         int margin = radius * 3;
         int x0 = Math.Max(0, (int)rect.X - margin), y0 = Math.Max(0, (int)rect.Y - margin);
-        int x1 = Math.Min(snapshot.Width, (int)(rect.X + rect.Width) + margin);
-        int y1 = Math.Min(snapshot.Height, (int)(rect.Y + rect.Height) + margin);
+        int x1 = Math.Min(_snapshot.Width, (int)(rect.X + rect.Width) + margin);
+        int y1 = Math.Min(_snapshot.Height, (int)(rect.Y + rect.Height) + margin);
         int w = x1 - x0, h = y1 - y0;
 
         // Work in planar float channels.
@@ -719,9 +731,9 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
             var plane = channels[c] = new float[w * h];
             for (int y = 0; y < h; y++)
             {
-                int src = (y0 + y) * snapshot.Stride + x0 * 4 + c;
+                int src = (y0 + y) * _snapshot.Stride + x0 * 4 + c;
                 for (int x = 0; x < w; x++, src += 4)
-                    plane[y * w + x] = snapshot.Pixels[src];
+                    plane[y * w + x] = _snapshot.Pixels[src];
             }
         }
 
@@ -772,5 +784,225 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
         }
         for (int i = 0; i < count; i++)
             data[start + i * step] = scratch[i];
+    }
+}
+
+/// <summary>
+/// A speech bubble with text and a tail pointing at <see cref="Tip"/>. Filled with the color when
+/// <see cref="TextAnnotation.Background"/> is on, otherwise white with a colored outline and text.
+/// </summary>
+internal sealed class CalloutAnnotation(string text, Point position, Point tip, Color color, double size, double scale)
+    : TextAnnotation(text, position, color, size, scale)
+{
+    /// <summary>Space between the text and the bubble edge, in DIPs.</summary>
+    public const double Padding = 10;
+
+    public Point Tip { get; private set; } = tip;
+
+    private Rect Box
+    {
+        get
+        {
+            var r = TextRect;
+            r.Inflate(Padding * Scale, Padding * Scale * 0.6);
+            return r;
+        }
+    }
+
+    public override Rect Bounds
+    {
+        get
+        {
+            var r = Rect.Union(Box, Tip);
+            r.Inflate(Scale, Scale); // outline
+            return r;
+        }
+    }
+
+    public override Point[] Handles => [Tip];
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        var box = Box;
+        box.Inflate(tolerance, tolerance);
+        var shape = Shape();
+        // The outline test gives the narrow tail end some tolerance.
+        return box.Contains(point) || shape.FillContains(point) || shape.StrokeContains(new Pen(Brushes.Black, 2 * tolerance + 2), point);
+    }
+
+    public override void MoveFrom(Annotation origin, Vector delta)
+    {
+        base.MoveFrom(origin, delta);
+        Tip = ((CalloutAnnotation)origin).Tip + delta;
+    }
+
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta) => Tip = ((CalloutAnnotation)origin).Tip + delta;
+
+    /// <summary>The rounded box joined with a tail from its center toward the tip.</summary>
+    private Geometry Shape()
+    {
+        var box = Box;
+        double radius = 8 * Scale;
+        Geometry shape = new RectangleGeometry(box, radius, radius);
+        var center = new Point(box.X + box.Width / 2, box.Y + box.Height / 2);
+        var direction = Tip - center;
+        if (direction.Length >= 1 && !box.Contains(Tip))
+        {
+            direction.Normalize();
+            var half = new Vector(-direction.Y, direction.X) * Math.Min(box.Width, box.Height) * 0.22;
+            var tail = new StreamGeometry();
+            using (var ctx = tail.Open())
+            {
+                ctx.BeginFigure(center + half, true, true);
+                ctx.LineTo(Tip, true, true);
+                ctx.LineTo(center - half, true, true);
+            }
+            shape = new CombinedGeometry(GeometryCombineMode.Union, shape, tail);
+        }
+        return shape;
+    }
+
+    protected override void Render(DrawingContext dc)
+    {
+        var shape = Shape();
+        if (Background)
+        {
+            dc.DrawGeometry(new SolidColorBrush(Color), null, shape);
+            dc.DrawText(Format(ContrastColor(Color)), Position);
+        }
+        else
+        {
+            dc.DrawGeometry(Brushes.White, new Pen(new SolidColorBrush(Color), Math.Max(1, 2 * Scale)), shape);
+            dc.DrawText(Format(Color), Position);
+        }
+    }
+}
+
+/// <summary>
+/// Shows the dragged area enlarged in a frame next to it, joined by a line. The frame can be dragged
+/// by its center handle; <see cref="Annotation.Size"/> is the zoom factor.
+/// </summary>
+internal sealed class MagnifierAnnotation(Point start, ScreenSnapshot snapshot, Color color, double zoom, double scale)
+    : DragAnnotation(start, color, zoom, scale)
+{
+    private const double GapDip = 24;
+    public const int ViewHandle = 8;
+
+    private Vector? _viewOffset; // from the source center to the view center; null = placed automatically
+    private BitmapSource? _cache;
+    private Int32Rect _cacheRect;
+    private ScreenSnapshot _snapshot = snapshot;
+
+    /// <summary>The screenshot the area is taken from; replaced when the annotation is pasted into another capture.</summary>
+    public ScreenSnapshot Snapshot
+    {
+        get => _snapshot;
+        set
+        {
+            _snapshot = value;
+            _cache = null;
+        }
+    }
+
+    public override bool HasOpacity => false;
+
+    public double Zoom => Math.Max(1, Size);
+
+    protected override double Thickness => Math.Max(1, 2 * Scale);
+
+    public Rect Source => new(Start, End);
+
+    public override bool IsEmpty => Source.Width < 4 || Source.Height < 4;
+
+    private static Point CenterOf(Rect r) => new(r.X + r.Width / 2, r.Y + r.Height / 2);
+
+    /// <summary>Where the enlarged copy is drawn: beside the source, on the right unless that leaves the screen.</summary>
+    public Rect View
+    {
+        get
+        {
+            var source = Source;
+            double w = source.Width * Zoom, h = source.Height * Zoom;
+            var center = CenterOf(source);
+            var offset = _viewOffset ?? AutoOffset(source, center, w);
+            return new Rect(center.X + offset.X - w / 2, center.Y + offset.Y - h / 2, w, h);
+        }
+    }
+
+    private Vector AutoOffset(Rect source, Point center, double viewWidth)
+    {
+        double dx = source.Width / 2 + GapDip * Scale + viewWidth / 2;
+        if (center.X + dx + viewWidth / 2 > _snapshot.Width && center.X - dx - viewWidth / 2 >= 0)
+            dx = -dx;
+        // Keep it on screen vertically: a source near the top or bottom edge would otherwise cut the view off.
+        double viewHeight = source.Height * Zoom;
+        double top = Math.Clamp(center.Y - viewHeight / 2, 0, Math.Max(0, _snapshot.Height - viewHeight));
+        return new Vector(dx, top + viewHeight / 2 - center.Y);
+    }
+
+    public override Rect Bounds => Rect.Union(Source, View);
+
+    public override Point[] Handles => [.. RectHandles.Points(Source), CenterOf(View)];
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        var source = Source;
+        source.Inflate(tolerance, tolerance);
+        return source.Contains(point) || View.Contains(point);
+    }
+
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    {
+        var o = (MagnifierAnnotation)origin;
+        if (handle == ViewHandle)
+        {
+            _viewOffset = CenterOf(o.View) - CenterOf(o.Source) + delta;
+            return;
+        }
+        var r = RectHandles.Resize(o.Source, handle, delta);
+        Start = r.TopLeft;
+        End = r.BottomRight;
+        _viewOffset = o._viewOffset;
+    }
+
+    protected override void Render(DrawingContext dc)
+    {
+        var source = Source;
+        var view = View;
+        var pen = CreatePen();
+
+        // Connect the facing edges of the source and the view.
+        var s = CenterOf(source);
+        var v = CenterOf(view);
+        bool sideways = Math.Abs(v.X - s.X) * source.Height >= Math.Abs(v.Y - s.Y) * source.Width;
+        Point from = sideways ? new Point(v.X > s.X ? source.Right : source.Left, s.Y) : new Point(s.X, v.Y > s.Y ? source.Bottom : source.Top);
+        Point to = sideways ? new Point(v.X > s.X ? view.Left : view.Right, v.Y) : new Point(v.X, v.Y > s.Y ? view.Top : view.Bottom);
+        dc.DrawLine(pen, from, to);
+        dc.DrawRectangle(null, pen, source);
+
+        var pixels = PixelRect(source);
+        if (pixels.Width > 0 && pixels.Height > 0)
+        {
+            if (_cache == null || pixels != _cacheRect)
+            {
+                _cache = _snapshot.Crop(new Rect(pixels.X, pixels.Y, pixels.Width, pixels.Height));
+                _cacheRect = pixels;
+            }
+            double radius = 6 * Scale;
+            dc.PushClip(new RectangleGeometry(view, radius, radius));
+            dc.DrawRectangle(Brushes.White, null, view);
+            dc.DrawImage(_cache, new Rect(
+                view.X + (pixels.X - source.X) * Zoom, view.Y + (pixels.Y - source.Y) * Zoom, pixels.Width * Zoom, pixels.Height * Zoom));
+            dc.Pop();
+            dc.DrawRoundedRectangle(null, pen, view, radius, radius);
+        }
+    }
+
+    /// <summary>The source in whole pixels, clipped to the snapshot.</summary>
+    private Int32Rect PixelRect(Rect r)
+    {
+        int left = Math.Max(0, (int)Math.Floor(r.Left)), top = Math.Max(0, (int)Math.Floor(r.Top));
+        int right = Math.Min(_snapshot.Width, (int)Math.Ceiling(r.Right)), bottom = Math.Min(_snapshot.Height, (int)Math.Ceiling(r.Bottom));
+        return right > left && bottom > top ? new Int32Rect(left, top, right - left, bottom - top) : Int32Rect.Empty;
     }
 }

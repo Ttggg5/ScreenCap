@@ -137,6 +137,11 @@
                     <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#xE70F;" Click="OnToolClick" />
                     <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" Click="OnToolClick" />
                     <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="&#xE97E;" Click="OnToolClick" />
+                    <ToggleButton x:Name="CalloutTool" Style="{StaticResource ToolToggle}" ToolTip="對話框：從要指的位置拖曳到放文字的地方" Click="OnToolClick">
+                        <Path Width="18" Height="16" Stretch="Uniform" StrokeThickness="1.4" StrokeLineJoin="Round"
+                              Data="M 2,1 H 16 A 1.5,1.5 0 0 1 17.5,2.5 V 9.5 A 1.5,1.5 0 0 1 16,11 H 8 L 4,15 V 11 H 2 A 1.5,1.5 0 0 1 0.5,9.5 V 2.5 A 1.5,1.5 0 0 1 2,1 Z"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
                     <ToggleButton x:Name="NumberTool" Style="{StaticResource ToolToggle}" ToolTip="序號標記" Click="OnToolClick">
                         <Border Width="17" Height="17" CornerRadius="8.5" BorderThickness="1.5"
                                 BorderBrush="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
@@ -145,6 +150,7 @@
                         </Border>
                     </ToggleButton>
                     <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克 / 模糊" Content="&#xE80A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="MagnifierTool" Style="{StaticResource ToolToggle}" ToolTip="放大鏡：框選要放大的範圍" Content="&#xE71E;" Click="OnToolClick" />
                     <ToggleButton x:Name="SpotlightTool" Style="{StaticResource ToolToggle}" ToolTip="聚光燈：框選的範圍以外調暗" Click="OnToolClick">
                         <Grid Width="18" Height="16">
                             <Rectangle RadiusX="2" RadiusY="2" Opacity="0.45"

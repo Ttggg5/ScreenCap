@@ -51,6 +51,27 @@ internal sealed class UndoStack
         return true;
     }
 
+    /// <summary>Moves an annotation in the stacking order (later items are drawn on top).</summary>
+    /// <returns>false if it was already there.</returns>
+    public bool Move(Annotation annotation, int index)
+    {
+        int from = _items.IndexOf(annotation);
+        index = Math.Clamp(index, 0, _items.Count - 1);
+        if (from < 0 || from == index)
+            return false;
+        Checkpoint();
+        _items.RemoveAt(from);
+        _items.Insert(index, annotation);
+        return true;
+    }
+
+    /// <summary>Starts over with <paramref name="annotations"/> and no undo history (reopening a capture).</summary>
+    public void Load(IEnumerable<Annotation> annotations)
+    {
+        Clear();
+        _items.AddRange(annotations);
+    }
+
     public void Clear()
     {
         _items.Clear();

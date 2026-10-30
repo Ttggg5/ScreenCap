@@ -11,6 +11,7 @@ namespace ScreenCap.Tray;
 internal sealed record TrayActions(
     Action Capture,
     Action<int> DelayedCapture,
+    Action ReopenLast,
     Action ToggleRecording,
     Action PinFromClipboard,
     Action CloseAllPins,
@@ -84,6 +85,18 @@ internal sealed class TrayIconHost : IDisposable
                 item.Padding = new Forms.Padding(0, 5, 12, 5);
         };
         menu.Items.Add(delayed);
+        var reopen = new Forms.ToolStripMenuItem();
+        reopen.Click += async (_, _) =>
+        {
+            await Task.Delay(250); // let the menu disappear first
+            actions.ReopenLast();
+        };
+        menu.Opening += (_, _) =>
+        {
+            reopen.Text = WithHotkey("再次開啟上一張截圖", AppSettings.ReopenHotkey);
+            reopen.Enabled = Capture.CaptureSession.CanReopen;
+        };
+        menu.Items.Add(reopen);
         menu.Items.Add(record);
         menu.Items.Add(pause);
         menu.Items.Add(pin);

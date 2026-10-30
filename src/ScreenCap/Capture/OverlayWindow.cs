@@ -51,7 +51,7 @@ internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, 
 /// </summary>
 internal sealed class OverlayWindow : Window
 {
-    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing, Polyline, AnnotationMoving, AnnotationResizing }
+    private enum State { Detecting, Pressing, Selecting, Selected, Moving, Resizing, Drawing, Polyline, CalloutPlacing, AnnotationMoving, AnnotationResizing }
 
     private const double HandleSize = 7;  // DIP
     private const double DragThreshold = 3; // physical px
@@ -107,6 +107,10 @@ internal sealed class OverlayWindow : Window
     private Point _textPos;
     private double _textSize;
     private bool _textReplacing;     // re-editing an existing text annotation
+    private Point? _calloutTip;      // the text being typed belongs to a callout pointing here
+
+    /// <summary>Annotation copied with Ctrl+Shift+C; kept across captures so it can be pasted into the next one.</summary>
+    private static Annotation? _copied;
 
     private TextStyle _textStyle;
 
@@ -114,8 +118,12 @@ internal sealed class OverlayWindow : Window
 
     private readonly OverlayMode _mode;
 
-    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, OverlayMode mode = OverlayMode.Capture, Rect? initialSelection = null)
+    /// <param name="annotations">Annotations to start with, when reopening the last capture.</param>
+    public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, OverlayMode mode = OverlayMode.Capture, Rect? initialSelection = null,
+        IEnumerable<Annotation>? annotations = null)
     {
+        if (annotations != null)
+            _annotations.Load(annotations);
         _mode = mode;
         _snap = snap;
         _detector = detector;
@@ -228,6 +236,9 @@ internal sealed class OverlayWindow : Window
 
     public OverlayResult Result { get; private set; } = OverlayResult.Cancelled;
 
+    /// <summary>The selection and annotations of a finished capture, so it can be reopened and edited again.</summary>
+    public (Rect Selection, List<Annotation> Annotations)? Session { get; private set; }
+
     private bool HasSelection => !_sel.IsEmpty && _sel.Width >= 1 && _sel.Height >= 1;
 
     // ---------------------------------------------------------------- layout / DPI
@@ -274,7 +285,7 @@ internal sealed class OverlayWindow : Window
         {
             if (_textBox != null)
             {
-                _sizes[ToolKind.Text] = _textSize = size;
+                _sizes[TextKind] = _textSize = size;
                 _textBox.FontSize = TextAnnotation.FontSizeFor(size, _scale);
                 return;
             }
@@ -489,6 +500,15 @@ internal sealed class OverlayWindow : Window
                 {
                     BeginText(p);
                 }
+                else if (inside && _tool == ToolKind.Callout)
+                {
+                    // Drag from where the tail should point to where the text goes; a dashed line previews it.
+                    _calloutTip = p;
+                    _drawing = new LineAnnotation(p, _color, 2, _scale) { Dashed = true };
+                    _annotationLayer.Current = _drawing;
+                    _state = State.CalloutPlacing;
+                    CaptureMouse();
+                }
                 else if (inside && _tool == ToolKind.Polyline)
                 {
                     _drawing = CreateAnnotation(p);
@@ -547,6 +567,7 @@ internal sealed class OverlayWindow : Window
 
             case State.Drawing:
             case State.Polyline:
+            case State.CalloutPlacing:
                 _drawing?.Update(p, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
                 _annotationLayer.InvalidateVisual();
                 break;
@@ -614,6 +635,15 @@ internal sealed class OverlayWindow : Window
                 _state = State.Selected;
                 break;
 
+            case State.CalloutPlacing when _calloutTip is { } tip:
+                _drawing = null;
+                _annotationLayer.Current = null;
+                _state = State.Selected;
+                // A click without dragging puts the text up and to the right of the point.
+                var boxAt = (_cursor - tip).Length > DragThreshold * 3 ? _cursor : tip + new Vector(40, -60) * _scale;
+                BeginText(ClampPoint(boxAt));
+                break;
+
             case State.Polyline when _drawing is PolylineAnnotation polyline && _polylinePressed:
                 // Press, drag and release draws a segment too.
                 _polylinePressed = false;
@@ -654,6 +684,13 @@ internal sealed class OverlayWindow : Window
             StopPicking();
         else if (_state == State.Polyline)
             FinishPolyline();
+        else if (_textBox == null && _state == State.Selected && HitAnnotation(_cursor) is { } hit)
+        {
+            // Opened on release, so letting go of the button doesn't pick a menu item.
+            Select(hit);
+            Refresh();
+            _menuFor = hit;
+        }
         else if (_textBox != null)
             CommitText();
         else if (_selected != null)
@@ -667,12 +704,25 @@ internal sealed class OverlayWindow : Window
             Close();
     }
 
+    private Annotation? _menuFor; // right-pressed annotation whose menu opens on release
+
+    protected override void OnMouseRightButtonUp(MouseButtonEventArgs e)
+    {
+        base.OnMouseRightButtonUp(e);
+        if (_menuFor is { } annotation)
+        {
+            _menuFor = null;
+            ShowAnnotationMenu(annotation);
+            e.Handled = true;
+        }
+    }
+
     private void UpdateSelectedCursor(Point p)
     {
         int annotationHandle = HitAnnotationHandle(p);
         if (annotationHandle >= 0)
         {
-            Cursor = _selected is LineAnnotation or PolylineAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
+            Cursor = _selected is LineAnnotation or PolylineAnnotation or CalloutAnnotation || (_selected is MagnifierAnnotation && annotationHandle == MagnifierAnnotation.ViewHandle) ? Cursors.SizeAll : HandleCursor(annotationHandle);
             return;
         }
         if (HitAnnotation(p) != null)
@@ -744,6 +794,21 @@ internal sealed class OverlayWindow : Window
                 polyline.RemoveLastPoint();
                 polyline.Update(_cursor, shift);
                 _annotationLayer.InvalidateVisual();
+                break;
+            case Key.D when ctrl && _selected != null && selected:
+                Duplicate(_selected);
+                break;
+            case Key.C when ctrl && shift && _selected != null && selected:
+                _copied = _selected.Clone();
+                break;
+            case Key.V when ctrl && _copied != null && selected:
+                Paste();
+                break;
+            case Key.OemCloseBrackets when ctrl && _selected != null && selected:
+                Reorder(_selected, shift ? int.MaxValue : 1);
+                break;
+            case Key.OemOpenBrackets when ctrl && _selected != null && selected:
+                Reorder(_selected, shift ? int.MinValue : -1);
                 break;
             case Key.Escape when _picking:
                 StopPicking();
@@ -970,6 +1035,7 @@ internal sealed class OverlayWindow : Window
         ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, SizeOf(_tool), _scale),
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
         ToolKind.Spotlight => new SpotlightAnnotation(p, _scale, _spotlightDim),
+        ToolKind.Magnifier => new MagnifierAnnotation(p, _snap, _color, SizeOf(_tool), _scale),
         _ => new PenAnnotation(p, _color, SizeOf(ToolKind.Pen), _scale),
     });
 
@@ -986,7 +1052,9 @@ internal sealed class OverlayWindow : Window
         HighlighterAnnotation => ToolKind.Highlighter,
         PenAnnotation => ToolKind.Pen,
         NumberAnnotation => ToolKind.Number,
+        CalloutAnnotation => ToolKind.Callout,
         TextAnnotation => ToolKind.Text,
+        MagnifierAnnotation => ToolKind.Magnifier,
         MosaicAnnotation => ToolKind.Mosaic,
         SpotlightAnnotation => ToolKind.Spotlight,
         _ => ToolKind.None,
@@ -1049,8 +1117,8 @@ internal sealed class OverlayWindow : Window
         // Without a selection, show the options of the shape the current tool would draw.
         var kind = annotation != null ? KindOf(annotation) : _tool;
         _toolbar.SetSize(kind, SizeOf(kind));
-        var sample = annotation ?? (_tool is ToolKind.None or ToolKind.Text ? null : CreateAnnotation(default));
-        bool textOptions = annotation is TextAnnotation || (annotation == null && _tool == ToolKind.Text);
+        var sample = annotation ?? (_tool is ToolKind.None or ToolKind.Text or ToolKind.Callout ? null : CreateAnnotation(default));
+        bool textOptions = annotation is TextAnnotation || (annotation == null && _tool is ToolKind.Text or ToolKind.Callout);
         _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, sample is MosaicAnnotation, textOptions,
             fill: sample?.CanFill == true, dash: sample?.CanDash == true, spotlight: sample is SpotlightAnnotation);
     }
@@ -1131,11 +1199,12 @@ internal sealed class OverlayWindow : Window
         Select(null);
         InvalidateAnnotations();
         _color = text.Color;
-        _sizes[ToolKind.Text] = text.Size;
+        _calloutTip = (text as CalloutAnnotation)?.Tip;
+        _sizes[TextKind] = text.Size;
         _textStyle = text.Style;
         _opacity = (int)Math.Round(text.Opacity * 100);
         _toolbar.SetColor(_color);
-        _toolbar.SetSize(ToolKind.Text, text.Size);
+        _toolbar.SetSize(TextKind, text.Size);
         _toolbar.SetTextStyle(_textStyle);
         _toolbar.SetShapeStyle(_filled, _dashed, _opacity);
         _toolbar.SetOptionsVisible(true, text: true);
@@ -1146,7 +1215,7 @@ internal sealed class OverlayWindow : Window
 
     private void BeginText(Point p, string text = "", bool replacing = false)
     {
-        _textSize = SizeOf(ToolKind.Text);
+        _textSize = SizeOf(TextKind);
         double fontSize = TextAnnotation.FontSizeFor(_textSize, _scale);
         _textPos = p;
         _textReplacing = replacing;
@@ -1190,24 +1259,111 @@ internal sealed class OverlayWindow : Window
         _textBox.Opacity = Math.Max(0.4, _opacity / 100.0); // keep the box itself findable
     }
 
+    /// <summary>The tool whose size applies to the text being typed.</summary>
+    private ToolKind TextKind => _calloutTip != null ? ToolKind.Callout : ToolKind.Text;
+
     private void CommitText()
     {
         var box = _textBox;
         if (box == null)
             return;
         _textBox = null;
+        var tip = _calloutTip;
+        _calloutTip = null;
         _root.Children.Remove(box);
         if (!string.IsNullOrWhiteSpace(box.Text))
         {
             // Offset by the TextBox border and internal text margin so the text stays where it was typed.
             var position = new Point(_textPos.X + 3, _textPos.Y + 1);
-            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale) { Style = _textStyle, Opacity = _opacity / 100.0 };
+            TextAnnotation annotation = tip is { } calloutTip
+                ? new CalloutAnnotation(box.Text, position, calloutTip, _color, _textSize, _scale)
+                : new TextAnnotation(box.Text, position, _color, _textSize, _scale);
+            annotation.Style = _textStyle;
+            annotation.Opacity = _opacity / 100.0;
             _annotations.Add(annotation, checkpoint: !_textReplacing);
             Select(annotation);
             InvalidateAnnotations();
         }
         Keyboard.Focus(this);
         Refresh();
+    }
+
+    /// <summary>Adds a copy of <paramref name="annotation"/> slightly offset, and selects it.</summary>
+    private void Duplicate(Annotation annotation)
+    {
+        var copy = annotation.Clone();
+        copy.MoveFrom(annotation, new Vector(12, 12) * _scale);
+        AddPasted(copy);
+    }
+
+    /// <summary>Pastes the copied annotation centered on the cursor (or offset, when the cursor is outside the selection).</summary>
+    private void Paste()
+    {
+        if (_copied == null)
+            return;
+        var copy = _copied.Clone();
+        // Mosaic and magnifier show pixels from a screenshot; use this one.
+        if (copy is MosaicAnnotation mosaic)
+            mosaic.Snapshot = _snap;
+        else if (copy is MagnifierAnnotation magnifier)
+            magnifier.Snapshot = _snap;
+        var bounds = copy.Bounds;
+        var center = new Point(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+        var delta = _sel.Contains(_cursor) ? _cursor - center : new Vector(12, 12) * _scale;
+        var placed = copy.Clone();
+        placed.MoveFrom(copy, delta);
+        AddPasted(placed);
+    }
+
+    private void AddPasted(Annotation annotation)
+    {
+        CommitText();
+        _annotations.Add(annotation);
+        Select(annotation);
+        InvalidateAnnotations();
+        Refresh();
+    }
+
+    /// <summary>Moves the annotation up (+1) or down (-1) one layer, or to the top / bottom (±max).</summary>
+    private void Reorder(Annotation annotation, int step)
+    {
+        int index = _annotations.Items.ToList().IndexOf(annotation);
+        if (index < 0)
+            return;
+        int target = step switch { int.MaxValue => _annotations.Items.Count - 1, int.MinValue => 0, _ => index + step };
+        if (_annotations.Move(annotation, target))
+            InvalidateAnnotations();
+    }
+
+    private void ShowAnnotationMenu(Annotation annotation)
+    {
+        var menu = new ContextMenu { Placement = System.Windows.Controls.Primitives.PlacementMode.MousePoint };
+        void Item(string header, string gesture, Action action, bool enabled = true)
+        {
+            var item = new MenuItem { Header = header, InputGestureText = gesture, IsEnabled = enabled };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+        int index = _annotations.Items.ToList().IndexOf(annotation), last = _annotations.Items.Count - 1;
+        Item("複製一份", "Ctrl+D", () => Duplicate(annotation));
+        Item("複製", "Ctrl+Shift+C", () => _copied = annotation.Clone());
+        Item("貼上", "Ctrl+V", Paste, _copied != null);
+        menu.Items.Add(new Separator());
+        Item("移到最上層", "Ctrl+Shift+]", () => Reorder(annotation, int.MaxValue), index < last);
+        Item("上移一層", "Ctrl+]", () => Reorder(annotation, 1), index < last);
+        Item("下移一層", "Ctrl+[", () => Reorder(annotation, -1), index > 0);
+        Item("移到最下層", "Ctrl+Shift+[", () => Reorder(annotation, int.MinValue), index > 0);
+        menu.Items.Add(new Separator());
+        Item("刪除", "Delete", () =>
+        {
+            _annotations.Remove(annotation);
+            Select(null);
+            InvalidateAnnotations();
+            Refresh();
+        });
+        menu.Closed += (_, _) => FocusOverlay();
+        menu.PlacementTarget = this; // not the window's ContextMenu, which WPF would open on every right-click
+        menu.IsOpen = true;
     }
 
     /// <summary>Ends the polyline being drawn and keeps it (if it has at least one segment).</summary>
@@ -1285,6 +1441,8 @@ internal sealed class OverlayWindow : Window
         CommitText();
         var image = Compositor.Compose(_snap, _sel, _annotations.Items);
         Result = new OverlayResult(action, image, x, y, Title: title);
+        if (_mode == OverlayMode.Capture)
+            Session = (_sel, _annotations.Items.Select(a => a.Clone()).ToList());
         Close();
     }
 
@@ -1350,7 +1508,7 @@ internal sealed class OverlayWindow : Window
         }
 
         // Toolbar
-        bool showToolbar = has && _state is State.Selected or State.Drawing or State.Polyline or State.AnnotationMoving or State.AnnotationResizing;
+        bool showToolbar = has && _state is State.Selected or State.Drawing or State.Polyline or State.CalloutPlacing or State.AnnotationMoving or State.AnnotationResizing;
         _toolbar.Visibility = showToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (showToolbar)
         {

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
+using ScreenCap.Annotations;
 using ScreenCap.Ocr;
 using ScreenCap.Pin;
 using ScreenCap.Recording;
@@ -29,6 +30,48 @@ internal static class CaptureSession
 
     private static bool _countingDown;
 
+    /// <summary>The last finished capture: its frozen screen, selection and still-editable annotations.</summary>
+    private sealed record LastCapture(ScreenSnapshot Snapshot, WindowDetector Detector, Rect Selection, List<Annotation> Annotations);
+
+    private static LastCapture? _last;
+
+    public static bool CanReopen => _last != null;
+
+    /// <summary>Opens the last capture again, with the same frozen screen, selection and annotations.</summary>
+    public static void ReopenLast()
+    {
+        if (IsActive || RecordingSession.IsActive || ScrollCaptureSession.IsActive || _countingDown)
+            return;
+        if (_last is not { } last)
+        {
+            Notifier.Show("還沒有可以重新開啟的截圖。");
+            return;
+        }
+        IsActive = true;
+        try
+        {
+            Show(new OverlayWindow(last.Snapshot, last.Detector, OverlayMode.Capture, last.Selection, last.Annotations.Select(a => a.Clone())),
+                last.Snapshot, last.Detector);
+        }
+        catch
+        {
+            IsActive = false;
+            throw;
+        }
+    }
+
+    private static void Show(OverlayWindow overlay, ScreenSnapshot snapshot, WindowDetector detector)
+    {
+        overlay.Closed += (_, _) =>
+        {
+            IsActive = false;
+            if (overlay.Session is { } session)
+                _last = new LastCapture(snapshot, detector, session.Selection, session.Annotations);
+            HandleResult(overlay.Result);
+        };
+        overlay.Show();
+    }
+
     /// <summary>Takes a screenshot after a countdown, e.g. to capture an open menu or tooltip.</summary>
     public static void StartDelayed(int seconds)
     {
@@ -49,13 +92,7 @@ internal static class CaptureSession
         {
             var snapshot = ScreenCaptureService.CaptureVirtualScreen(AppSettings.CaptureCursor);
             var detector = WindowDetector.Snapshot(snapshot);
-            var overlay = new OverlayWindow(snapshot, detector, recordMode ? OverlayMode.Record : OverlayMode.Capture);
-            overlay.Closed += (_, _) =>
-            {
-                IsActive = false;
-                HandleResult(overlay.Result);
-            };
-            overlay.Show();
+            Show(new OverlayWindow(snapshot, detector, recordMode ? OverlayMode.Record : OverlayMode.Capture), snapshot, detector);
         }
         catch
         {

@@ -70,6 +70,7 @@ internal static class AppSettings
     public static readonly Hotkey DefaultCaptureHotkey = new(ModifierKeys.None, Key.F1);
     public static readonly Hotkey DefaultRecordHotkey = new(ModifierKeys.Shift, Key.F1);
     public static readonly Hotkey DefaultPinHotkey = new(ModifierKeys.None, Key.F3);
+    public static readonly Hotkey DefaultReopenHotkey = new(ModifierKeys.Control | ModifierKeys.Shift, Key.F1);
 
     public static string DefaultSaveFolder => Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
 
@@ -89,6 +90,12 @@ internal static class AppSettings
     {
         get => Hotkey.Deserialize(Get("PinHotkey")) ?? DefaultPinHotkey;
         set => Set("PinHotkey", value.Serialize());
+    }
+
+    public static Hotkey ReopenHotkey
+    {
+        get => Hotkey.Deserialize(Get("ReopenHotkey")) ?? DefaultReopenHotkey;
+        set => Set("ReopenHotkey", value.Serialize());
     }
 
     /// <summary>Where quick save writes, and where save dialogs start. Falls back to Pictures if it no longer exists.</summary>
