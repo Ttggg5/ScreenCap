@@ -18,6 +18,7 @@ internal sealed class SettingsWindow : Window
     private readonly TextBox _folder = new() { IsReadOnly = true, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled, Margin = new Thickness(0, 4, 0, 0) };
     private readonly ComboBox _theme = new();
+    private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
 
     public SettingsWindow()
     {
@@ -56,6 +57,7 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Heading("一般"));
         body.Children.Add(Row("外觀", _theme));
         body.Children.Add(_startup);
+        body.Children.Add(_cursor);
 
         var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
@@ -115,6 +117,7 @@ internal sealed class SettingsWindow : Window
         _pin.Hotkey = AppSettings.DefaultPinHotkey;
         _folder.Text = AppSettings.DefaultSaveFolder;
         _theme.SelectedIndex = (int)AppTheme.System;
+        _cursor.IsChecked = false;
     }
 
     private void Apply()
@@ -130,6 +133,7 @@ internal sealed class SettingsWindow : Window
         AppSettings.RecordHotkey = _record.Hotkey;
         AppSettings.PinHotkey = _pin.Hotkey;
         AppSettings.SaveFolder = _folder.Text;
+        AppSettings.CaptureCursor = _cursor.IsChecked == true;
         var theme = (AppTheme)((ComboBoxItem)_theme.SelectedItem).Tag;
         if (theme != AppSettings.Theme)
         {

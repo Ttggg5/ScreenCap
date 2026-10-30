@@ -9,6 +9,7 @@ namespace ScreenCap.Tray;
 
 internal sealed record TrayActions(
     Action Capture,
+    Action<int> DelayedCapture,
     Action ToggleRecording,
     Action PinFromClipboard,
     Action CloseAllPins,
@@ -63,6 +64,21 @@ internal sealed class TrayIconHost : IDisposable
             pin.Text = WithHotkey("剪貼簿貼為貼圖", AppSettings.PinHotkey);
         };
         menu.Items.Add(capture);
+        var delayed = new Forms.ToolStripMenuItem("延遲截圖");
+        foreach (int seconds in new[] { 3, 5, 10 })
+            delayed.DropDownItems.Add($"{seconds} 秒", null, (_, _) => actions.DelayedCapture(seconds));
+        delayed.DropDown.HandleCreated += (_, _) => ThemeManager.RoundCorners(delayed.DropDown.Handle);
+        delayed.DropDownOpening += (_, _) =>
+        {
+            var renderer = new TrayMenuRenderer(ThemeManager.IsDark);
+            delayed.DropDown.Renderer = renderer;
+            delayed.DropDown.BackColor = renderer.Background;
+            delayed.DropDown.Padding = new Forms.Padding(0, 4, 0, 4);
+            ((Forms.ToolStripDropDownMenu)delayed.DropDown).ShowImageMargin = false;
+            foreach (Forms.ToolStripItem item in delayed.DropDownItems)
+                item.Padding = new Forms.Padding(0, 5, 12, 5);
+        };
+        menu.Items.Add(delayed);
         menu.Items.Add(record);
         menu.Items.Add(pin);
         menu.Items.Add("關閉所有貼圖", null, (_, _) => actions.CloseAllPins());

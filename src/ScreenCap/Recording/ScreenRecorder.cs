@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
 using System.Windows;
+using ScreenCap.Native;
 using static ScreenCap.Native.NativeMethods;
 
 namespace ScreenCap.Recording;
@@ -145,28 +145,13 @@ internal sealed class ScreenRecorder
         {
             // No CAPTUREBLT here: it makes the cursor flicker when capturing repeatedly.
             BitBlt(_memDc, 0, 0, _r.Width, _r.Height, _screenDc, _r.X, _r.Y, SRCCOPY);
-            DrawCursor();
+            CursorPainter.Draw(_memDc, _r.X, _r.Y);
 
             var pixels = new byte[_r.Width * _r.Height * 4];
             SelectObject(_memDc, _oldBitmap);
             GetDIBits(_memDc, _bitmap, 0, (uint)_r.Height, pixels, ref _header, 0);
             SelectObject(_memDc, _bitmap);
             return pixels;
-        }
-
-        private void DrawCursor()
-        {
-            var info = new CURSORINFO { cbSize = Marshal.SizeOf<CURSORINFO>() };
-            if (!GetCursorInfo(ref info) || (info.flags & CURSOR_SHOWING) == 0)
-                return;
-            if (!GetIconInfo(info.hCursor, out var icon))
-                return;
-            DeleteObject(icon.hbmMask);
-            if (icon.hbmColor != IntPtr.Zero)
-                DeleteObject(icon.hbmColor);
-
-            DrawIconEx(_memDc, info.ptScreenPos.X - icon.xHotspot - _r.X, info.ptScreenPos.Y - icon.yHotspot - _r.Y,
-                info.hCursor, 0, 0, 0, IntPtr.Zero, DI_NORMAL);
         }
 
         public void Dispose()

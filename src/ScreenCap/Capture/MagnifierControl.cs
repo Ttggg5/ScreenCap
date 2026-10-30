@@ -10,8 +10,12 @@ namespace ScreenCap.Capture;
 internal sealed class MagnifierControl : Border
 {
     private readonly PixelView _view = new();
+    private static readonly Brush Active = Brushes.White;
+    private static readonly Brush Inactive = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A));
+
     private readonly TextBlock _position = CreateText();
-    private readonly TextBlock _color = CreateText();
+    private readonly TextBlock _hex = CreateText();
+    private readonly TextBlock _rgb = CreateText();
     private readonly Border _swatch = new() { Width = 12, Height = 12, BorderBrush = Brushes.White, BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 6, 0) };
 
     public MagnifierControl()
@@ -25,10 +29,12 @@ internal sealed class MagnifierControl : Border
 
         var colorRow = new StackPanel { Orientation = Orientation.Horizontal };
         colorRow.Children.Add(_swatch);
-        colorRow.Children.Add(_color);
+        colorRow.Children.Add(_hex);
+        _rgb.Margin = new Thickness(10, 0, 0, 0);
+        colorRow.Children.Add(_rgb);
 
         var hint = CreateText();
-        hint.Text = "C：複製色值";
+        hint.Text = "C：複製色值　Shift：切換格式";
         hint.Foreground = new SolidColorBrush(Color.FromRgb(0xAA, 0xAA, 0xAA));
 
         var info = new StackPanel { Margin = new Thickness(6, 4, 6, 5) };
@@ -36,20 +42,43 @@ internal sealed class MagnifierControl : Border
         info.Children.Add(colorRow);
         info.Children.Add(hint);
 
+        UseRgb = false;
+
         var stack = new StackPanel();
         stack.Children.Add(new Border { CornerRadius = new CornerRadius(5, 5, 0, 0), ClipToBounds = true, Child = _view });
         stack.Children.Add(info);
         Child = stack;
     }
 
-    public string HexColor { get; private set; } = "#000000";
+    private Color _pixel;
+    private bool _useRgb;
+
+    /// <summary>Copy the color as <c>rgb(r, g, b)</c> instead of <c>#RRGGBB</c>; the active format is highlighted.</summary>
+    public bool UseRgb
+    {
+        get => _useRgb;
+        set
+        {
+            _useRgb = value;
+            _hex.Foreground = value ? Inactive : Active;
+            _rgb.Foreground = value ? Active : Inactive;
+        }
+    }
+
+    /// <summary>The color under the cursor in the selected format, as copied by C.</summary>
+    public string ColorText => UseRgb ? FormatRgb(_pixel) : FormatHex(_pixel);
+
+    public static string FormatHex(Color c) => $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+
+    public static string FormatRgb(Color c) => $"rgb({c.R}, {c.G}, {c.B})";
 
     public void Update(ScreenSnapshot snapshot, int x, int y)
     {
         var c = snapshot.GetPixel(x, y);
-        HexColor = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        _pixel = c;
         _position.Text = $"({x + snapshot.Left}, {y + snapshot.Top})";
-        _color.Text = $"{HexColor}  RGB({c.R}, {c.G}, {c.B})";
+        _hex.Text = FormatHex(c);
+        _rgb.Text = FormatRgb(c);
         _swatch.Background = new SolidColorBrush(c);
         _view.Set(snapshot, x, y);
     }

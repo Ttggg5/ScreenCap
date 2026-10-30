@@ -30,6 +30,7 @@ public partial class App : Application
 
         _tray = new TrayIconHost(new TrayActions(
             Capture: () => CaptureSession.Start(),
+            DelayedCapture: CaptureSession.StartDelayed,
             ToggleRecording: ToggleRecording,
             PinFromClipboard: PinFromClipboard,
             CloseAllPins: PinWindow.CloseAll,

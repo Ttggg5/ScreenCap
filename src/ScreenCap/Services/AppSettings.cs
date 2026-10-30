@@ -108,6 +108,20 @@ internal static class AppSettings
         set => Set("Theme", value.ToString());
     }
 
+    /// <summary>Draw the mouse cursor into screenshots.</summary>
+    public static bool CaptureCursor
+    {
+        get => Get("CaptureCursor") == "1";
+        set => Set("CaptureCursor", value ? "1" : "0");
+    }
+
+    /// <summary>The magnifier copies RGB instead of HEX when pressing C.</summary>
+    public static bool CopyColorAsRgb
+    {
+        get => Get("CopyColorAsRgb") == "1";
+        set => Set("CopyColorAsRgb", value ? "1" : "0");
+    }
+
     /// <summary>Colors picked from the custom palette, most recent first.</summary>
     public static IReadOnlyList<Color> RecentColors
     {

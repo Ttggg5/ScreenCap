@@ -23,6 +23,19 @@ public class AppSettingsTests : IDisposable
         Assert.Equal(AppSettings.DefaultSaveFolder, AppSettings.SaveFolder);
         Assert.Equal(RecordingFormat.Gif, AppSettings.RecordingFormat);
         Assert.Empty(AppSettings.RecentColors);
+        Assert.False(AppSettings.CaptureCursor);
+        Assert.False(AppSettings.CopyColorAsRgb);
+    }
+
+    [Fact]
+    public void Toggles_RoundTrip()
+    {
+        AppSettings.CaptureCursor = true;
+        AppSettings.CopyColorAsRgb = true;
+        Assert.True(AppSettings.CaptureCursor);
+        Assert.True(AppSettings.CopyColorAsRgb);
+        AppSettings.CaptureCursor = false;
+        Assert.False(AppSettings.CaptureCursor);
     }
 
     [Fact]

@@ -26,6 +26,18 @@ internal static class CaptureSession
             _history.RemoveAt(0);
     }
 
+    private static bool _countingDown;
+
+    /// <summary>Takes a screenshot after a countdown, e.g. to capture an open menu or tooltip.</summary>
+    public static void StartDelayed(int seconds)
+    {
+        if (IsActive || RecordingSession.IsActive || _countingDown)
+            return;
+        _countingDown = true;
+        var countdown = CountdownWindow.Start(seconds, () => Start());
+        countdown.Closed += (_, _) => _countingDown = false; // finished or cancelled by a click
+    }
+
     /// <param name="recordMode">Select a region to record instead of taking a screenshot.</param>
     public static void Start(bool recordMode = false)
     {
@@ -34,7 +46,7 @@ internal static class CaptureSession
         IsActive = true;
         try
         {
-            var snapshot = ScreenCaptureService.CaptureVirtualScreen();
+            var snapshot = ScreenCaptureService.CaptureVirtualScreen(AppSettings.CaptureCursor);
             var detector = WindowDetector.Snapshot(snapshot);
             var overlay = new OverlayWindow(snapshot, detector, recordMode ? OverlayMode.Record : OverlayMode.Capture);
             overlay.Closed += (_, _) =>

@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using ScreenCap.Native;
 using static ScreenCap.Native.NativeMethods;
 
 namespace ScreenCap.Services;
@@ -63,7 +64,8 @@ internal sealed class ScreenSnapshot
 
 internal static class ScreenCaptureService
 {
-    public static ScreenSnapshot CaptureVirtualScreen()
+    /// <param name="includeCursor">Draw the mouse cursor into the capture.</param>
+    public static ScreenSnapshot CaptureVirtualScreen(bool includeCursor = false)
     {
         int x = GetSystemMetrics(SM_XVIRTUALSCREEN);
         int y = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -77,6 +79,8 @@ internal static class ScreenCaptureService
         try
         {
             BitBlt(memDc, 0, 0, w, h, screenDc, x, y, SRCCOPY | CAPTUREBLT);
+            if (includeCursor)
+                CursorPainter.Draw(memDc, x, y);
             SelectObject(memDc, old); // GetDIBits requires the bitmap to be deselected
 
             var header = new BITMAPINFOHEADER

@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using ScreenCap.Annotations;
 using ScreenCap.Services;
 using static ScreenCap.Native.NativeMethods;
+using Forms = System.Windows.Forms;
 using Path = System.Windows.Shapes.Path;
 
 namespace ScreenCap.Capture;
@@ -111,6 +112,7 @@ internal sealed class OverlayWindow : Window
         _detector = detector;
         _color = _toolbar.SelectedColor;
         _size = _toolbar.SelectedSize;
+        _magnifier.UseRgb = AppSettings.CopyColorAsRgb;
 
         Title = "ScreenCap";
         WindowStyle = WindowStyle.None;
@@ -611,8 +613,16 @@ internal sealed class OverlayWindow : Window
                 Finish(OverlayAction.Copy);
                 break;
             case Key.C when !ctrl && !selected:
-                ClipboardService.SetText(_magnifier.HexColor);
+                ClipboardService.SetText(_magnifier.ColorText);
                 Close();
+                break;
+            case Key.LeftShift or Key.RightShift when !selected && !e.IsRepeat:
+                // Toggle the color format the magnifier copies (HEX / RGB); remembered across captures.
+                _magnifier.UseRgb = !_magnifier.UseRgb;
+                AppSettings.CopyColorAsRgb = _magnifier.UseRgb;
+                break;
+            case Key.A when ctrl && _mode != OverlayMode.EditPin && _state is State.Detecting or State.Selected:
+                SelectScreen();
                 break;
             case Key.S when ctrl && shift && selected:
                 Finish(OverlayAction.QuickSave);
@@ -676,6 +686,22 @@ internal sealed class OverlayWindow : Window
     }
 
     // ---------------------------------------------------------------- selection
+
+    /// <summary>Selects the monitor under the cursor; pressed again, the whole virtual screen.</summary>
+    private void SelectScreen()
+    {
+        var all = new Rect(0, 0, _snap.Width, _snap.Height);
+        var bounds = Forms.Screen.FromPoint(new System.Drawing.Point((int)_cursor.X + _snap.Left, (int)_cursor.Y + _snap.Top)).Bounds;
+        var monitor = new Rect(bounds.X - _snap.Left, bounds.Y - _snap.Top, bounds.Width, bounds.Height);
+        monitor.Intersect(all);
+        if (monitor.IsEmpty)
+            monitor = all;
+
+        _sel = _state == State.Selected && _sel == monitor ? all : monitor;
+        _state = State.Selected;
+        UpdateSelectedCursor(_cursor);
+        Refresh();
+    }
 
     /// <summary>Jumps to an earlier (-1) or later (+1) capture region; past the newest goes back to detection.</summary>
     private void StepHistory(int direction)

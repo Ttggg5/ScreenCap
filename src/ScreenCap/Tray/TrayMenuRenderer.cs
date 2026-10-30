@@ -57,6 +57,12 @@ internal sealed class TrayMenuRenderer(bool dark) : Forms.ToolStripRenderer
         ]);
     }
 
+    protected override void OnRenderArrow(Forms.ToolStripArrowRenderEventArgs e)
+    {
+        e.ArrowColor = e.Item?.Enabled == false ? _disabled : _text;
+        base.OnRenderArrow(e);
+    }
+
     protected override void OnRenderSeparator(Forms.ToolStripSeparatorRenderEventArgs e)
     {
         using var pen = new Pen(_divider);
