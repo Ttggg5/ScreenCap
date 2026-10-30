@@ -90,8 +90,10 @@ internal sealed class TrayMenuRenderer(bool dark) : Forms.ToolStripRenderer
     }
     protected override void OnRenderItemCheck(Forms.ToolStripItemImageRenderEventArgs e)
     {
-        // A check glyph in the accent color instead of the boxed default.
-        var r = e.ImageRectangle;
+        // A check glyph in the accent color instead of the boxed default, centered on the item like the text
+        // (WinForms places the image rectangle at the top padding).
+        var image = e.ImageRectangle;
+        var r = new RectangleF(image.X, (e.Item.Height - image.Height) / 2f, image.Width, image.Height);
         using var pen = new Pen(_accent, 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         e.Graphics.DrawLines(pen, [
