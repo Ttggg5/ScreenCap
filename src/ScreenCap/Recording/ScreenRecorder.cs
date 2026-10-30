@@ -29,7 +29,11 @@ internal sealed class ScreenRecorder
     private readonly Func<IFrameEncoder> _createEncoder;
     private readonly BlockingCollection<(byte[] Pixels, TimeSpan Time)> _frames;
     private readonly ManualResetEventSlim _stopSignal = new();
+    private readonly ManualResetEventSlim _running = new(true); // reset while paused
+
+    // Paused time is left out: the clock stops, so timestamps continue where they left off.
     private readonly Stopwatch _clock = new();
+    private readonly Lock _clockLock = new();
     private Task? _captureTask, _encodeTask;
     private TimeSpan _endTime;
 
@@ -43,7 +47,35 @@ internal sealed class ScreenRecorder
         _frames = new(boundedCapacity: (int)Math.Clamp(MaxQueuedBytes / frameBytes, 4, 60));
     }
 
-    public TimeSpan Elapsed => _clock.Elapsed;
+    public TimeSpan Elapsed
+    {
+        get
+        {
+            lock (_clockLock)
+                return _clock.Elapsed;
+        }
+    }
+
+    public bool IsPaused => !_running.IsSet;
+
+    /// <summary>Stops capturing frames until <see cref="Resume"/>; the paused time is not part of the recording.</summary>
+    public void Pause()
+    {
+        lock (_clockLock)
+        {
+            _running.Reset();
+            _clock.Stop();
+        }
+    }
+
+    public void Resume()
+    {
+        lock (_clockLock)
+        {
+            _clock.Start();
+            _running.Set();
+        }
+    }
 
     /// <summary>Creates the encoder, then starts capturing. Throws if the encoder can't be created.</summary>
     public async Task StartAsync()
@@ -51,7 +83,8 @@ internal sealed class ScreenRecorder
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _encodeTask = Task.Factory.StartNew(() => EncodeLoop(ready), TaskCreationOptions.LongRunning);
         await ready.Task;
-        _clock.Start();
+        lock (_clockLock)
+            _clock.Start();
         _captureTask = Task.Factory.StartNew(CaptureLoop, TaskCreationOptions.LongRunning);
     }
 
@@ -59,6 +92,7 @@ internal sealed class ScreenRecorder
     public async Task StopAsync()
     {
         _stopSignal.Set();
+        _running.Set(); // wake a paused capture loop so it can exit
         // No UI context needed here, which also makes a blocking Wait() on exit safe.
         await Task.WhenAll(_captureTask!, _encodeTask!).ConfigureAwait(false);
     }
@@ -69,20 +103,25 @@ internal sealed class ScreenRecorder
         {
             using var grabber = new RegionGrabber(_region);
             double interval = 1000.0 / _fps;
-            for (long frame = 0; !_stopSignal.IsSet; frame++)
+            for (long frame = 0; ;)
             {
-                var time = _clock.Elapsed;
+                _running.Wait();
+                if (_stopSignal.IsSet)
+                    break;
+                var time = Elapsed;
+                if (IsPaused)
+                    continue; // paused between the wait and reading the clock
                 // If the encoder falls behind, drop the frame; the previous one is simply shown longer.
                 _frames.TryAdd((grabber.Grab(), time));
 
-                double wait = (frame + 1) * interval - _clock.Elapsed.TotalMilliseconds;
+                double wait = ++frame * interval - Elapsed.TotalMilliseconds;
                 if (wait > 0)
                     _stopSignal.Wait(TimeSpan.FromMilliseconds(wait));
             }
         }
         finally
         {
-            _endTime = _clock.Elapsed;
+            _endTime = Elapsed;
             _frames.CompleteAdding();
         }
     }
@@ -114,6 +153,7 @@ internal sealed class ScreenRecorder
         {
             // Unblock the capture thread so StopAsync can surface the error.
             _stopSignal.Set();
+            _running.Set();
             throw;
         }
     }

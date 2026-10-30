@@ -108,6 +108,13 @@ internal static class AppSettings
         set => Set("Theme", value.ToString());
     }
 
+    /// <summary>File name pattern for saved captures and recordings; see <see cref="FileNameTemplate"/>.</summary>
+    public static string FileNamePattern
+    {
+        get => Get("FileNamePattern") is { Length: > 0 } pattern ? pattern : FileNameTemplate.Default;
+        set => Set("FileNamePattern", value);
+    }
+
     /// <summary>Draw the mouse cursor into screenshots.</summary>
     public static bool CaptureCursor
     {

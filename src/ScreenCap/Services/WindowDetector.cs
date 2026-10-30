@@ -56,6 +56,25 @@ internal sealed class WindowDetector
         return null;
     }
 
+    /// <summary>Title of the topmost titled window under the center of <paramref name="selection"/>, for file names.</summary>
+    public string? TitleAt(Rect selection)
+    {
+        var center = new Point(selection.X + selection.Width / 2, selection.Y + selection.Height / 2);
+        foreach (var (hwnd, bounds) in _windows)
+        {
+            if (!bounds.Contains(center))
+                continue;
+            int length = GetWindowTextLength(hwnd);
+            if (length == 0)
+                continue; // untitled popups, toolbars, …
+            var buffer = new char[length + 1];
+            string title = new string(buffer, 0, GetWindowText(hwnd, buffer, buffer.Length));
+            if (title.Length > 0)
+                return title == "Program Manager" ? null : title; // the desktop
+        }
+        return null;
+    }
+
     private static bool IsCandidate(IntPtr hwnd)
     {
         if (!IsWindowVisible(hwnd) || IsIconic(hwnd))

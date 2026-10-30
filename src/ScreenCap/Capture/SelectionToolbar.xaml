@@ -124,6 +124,10 @@
                     <ToggleButton x:Name="RectangleTool" Style="{StaticResource ToolToggle}" ToolTip="矩形" Content="&#xE739;" Click="OnToolClick" />
                     <ToggleButton x:Name="EllipseTool" Style="{StaticResource ToolToggle}" ToolTip="橢圓" Content="&#xEA3A;" Click="OnToolClick" />
                     <ToggleButton x:Name="ArrowTool" Style="{StaticResource ToolToggle}" ToolTip="箭頭" Content="&#xE72A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="LineTool" Style="{StaticResource ToolToggle}" ToolTip="直線" Click="OnToolClick">
+                        <Line X1="2" Y1="14" X2="14" Y2="2" Width="16" Height="16" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
                     <ToggleButton x:Name="PenTool" Style="{StaticResource ToolToggle}" ToolTip="畫筆" Content="&#xE70F;" Click="OnToolClick" />
                     <ToggleButton x:Name="HighlighterTool" Style="{StaticResource ToolToggle}" ToolTip="螢光筆" Content="&#xE7E6;" Click="OnToolClick" />
                     <ToggleButton x:Name="TextTool" Style="{StaticResource ToolToggle}" ToolTip="文字" Content="&#xE97E;" Click="OnToolClick" />
@@ -192,6 +196,17 @@
                             </Border>
                         </ToggleButton>
                     </StackPanel>
+                    <StackPanel x:Name="ShapeOptions" Orientation="Horizontal" Visibility="Collapsed">
+                        <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                        <ToggleButton x:Name="FillToggle" Style="{StaticResource SizeDot}" ToolTip="填滿" Click="OnShapeStyleClick">
+                            <Rectangle Width="14" Height="11" RadiusX="1.5" RadiusY="1.5"
+                                       Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        </ToggleButton>
+                        <ToggleButton x:Name="DashToggle" Style="{StaticResource SizeDot}" ToolTip="虛線" Click="OnShapeStyleClick">
+                            <Line X1="1" Y1="6" X2="16" Y2="6" Width="17" Height="12" StrokeThickness="2" StrokeDashArray="1.5 1.25"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        </ToggleButton>
+                    </StackPanel>
                     <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
                     <StackPanel x:Name="Swatches" Orientation="Horizontal" VerticalAlignment="Center">
                         <ToggleButton Style="{StaticResource Swatch}" Background="#E53935" ToolTip="紅" Click="OnColorClick" />
@@ -212,6 +227,15 @@
                     <ToggleButton x:Name="CustomSwatch" Style="{StaticResource Swatch}" Visibility="Collapsed" ToolTip="自訂顏色" Click="OnColorClick" />
                     <ToggleButton x:Name="PaletteToggle" Style="{StaticResource SizeDot}" ToolTip="調色盤" Margin="2,0,0,0" Click="OnPaletteClick" Content="&#xE790;" />
                     <ToggleButton x:Name="EyedropperToggle" Style="{StaticResource SizeDot}" ToolTip="吸管：從截圖上取色" Click="OnEyedropperClick" Content="&#xEF3C;" />
+                    <StackPanel x:Name="OpacityOptions" Orientation="Horizontal">
+                        <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                        <TextBlock Text="不透明度" Style="{StaticResource Label}" Margin="2,0,6,0" />
+                        <Slider x:Name="OpacitySlider" Width="80" Minimum="10" Maximum="100" SmallChange="10" LargeChange="10" TickFrequency="10"
+                                IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center" Value="100"
+                                PreviewMouseLeftButtonDown="OnOpacitySliderPressed" ValueChanged="OnOpacitySliderChanged" />
+                        <TextBlock x:Name="OpacityValue" Width="34" Style="{StaticResource Label}" TextAlignment="Right"
+                                   Margin="2,0,4,0" FontFamily="Consolas" Text="100%" />
+                    </StackPanel>
                 </StackPanel>
             </StackPanel>
 

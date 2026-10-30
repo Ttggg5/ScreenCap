@@ -11,8 +11,8 @@ internal sealed class AnnotationLayer(IReadOnlyList<Annotation> annotations) : F
     protected override void OnRender(DrawingContext dc)
     {
         foreach (var annotation in annotations)
-            annotation.Render(dc);
-        Current?.Render(dc);
+            annotation.Draw(dc);
+        Current?.Draw(dc);
     }
 }
 
@@ -31,7 +31,7 @@ internal sealed class AnnotationAdorner : FrameworkElement
             return;
 
         double s = Scale;
-        if (Target is not ArrowAnnotation)
+        if (Target is not LineAnnotation)
         {
             var box = Target.Bounds;
             if (Target.Handles.Length == 0)

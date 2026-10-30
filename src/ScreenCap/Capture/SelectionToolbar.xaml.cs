@@ -13,6 +13,7 @@ internal enum ToolKind
     Rectangle,
     Ellipse,
     Arrow,
+    Line,
     Pen,
     Highlighter,
     Number,
@@ -34,6 +35,7 @@ internal partial class SelectionToolbar : UserControl
             [RectangleTool] = ToolKind.Rectangle,
             [EllipseTool] = ToolKind.Ellipse,
             [ArrowTool] = ToolKind.Arrow,
+            [LineTool] = ToolKind.Line,
             [PenTool] = ToolKind.Pen,
             [HighlighterTool] = ToolKind.Highlighter,
             [NumberTool] = ToolKind.Number,
@@ -117,6 +119,41 @@ internal partial class SelectionToolbar : UserControl
 
     private void OnTextStyleClick(object sender, RoutedEventArgs e) => TextStyleChanged?.Invoke(TextBold, TextBackground);
 
+    /// <summary>Raised with the fill and dash state when either toggle changes.</summary>
+    public event Action<bool, bool>? ShapeStyleChanged;
+
+    /// <summary>Raised with the new opacity in percent and whether this is the first change of a new slider gesture.</summary>
+    public event Action<int, bool>? OpacityChanged;
+
+    public bool ShapeFilled => FillToggle.IsChecked == true;
+    public bool ShapeDashed => DashToggle.IsChecked == true;
+    public int OpacityPercent => (int)OpacitySlider.Value;
+
+    public void SetShapeStyle(bool filled, bool dashed, int opacity)
+    {
+        FillToggle.IsChecked = filled;
+        DashToggle.IsChecked = dashed;
+        _updatingSlider = true;
+        OpacitySlider.Value = opacity;
+        OpacityValue.Text = $"{opacity}%";
+        _updatingSlider = false;
+    }
+
+    private void OnShapeStyleClick(object sender, RoutedEventArgs e) => ShapeStyleChanged?.Invoke(ShapeFilled, ShapeDashed);
+
+    private bool _opacityGestureStarted;
+
+    private void OnOpacitySliderPressed(object sender, MouseButtonEventArgs e) => _opacityGestureStarted = true;
+
+    private void OnOpacitySliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (OpacityValue == null || _updatingSlider)
+            return; // fired during InitializeComponent, or a programmatic update
+        OpacityValue.Text = $"{OpacityPercent}%";
+        OpacityChanged?.Invoke(OpacityPercent, _opacityGestureStarted);
+        _opacityGestureStarted = false;
+    }
+
     /// <summary>Editing an existing pin: recording makes no sense there.</summary>
     public void SetEditPinMode()
     {
@@ -191,15 +228,18 @@ internal partial class SelectionToolbar : UserControl
     public int MosaicStrength => (int)MosaicSlider.Value;
 
     /// <summary>
-    /// Shows the options row; mosaic shows a blur-strength slider instead of size and color,
-    /// and text adds bold / background toggles.
+    /// Shows the options row; mosaic shows a blur-strength slider instead of size, color and opacity,
+    /// text adds bold / background toggles, and shapes add fill / dash toggles.
     /// </summary>
-    public void SetOptionsVisible(bool visible, bool mosaic = false, bool text = false)
+    public void SetOptionsVisible(bool visible, bool mosaic = false, bool text = false, bool fill = false, bool dash = false)
     {
         OptionsRow.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         MosaicOptions.Visibility = mosaic ? Visibility.Visible : Visibility.Collapsed;
         StrokeOptions.Visibility = mosaic ? Visibility.Collapsed : Visibility.Visible;
         TextOptions.Visibility = text && !mosaic ? Visibility.Visible : Visibility.Collapsed;
+        ShapeOptions.Visibility = fill || dash ? Visibility.Visible : Visibility.Collapsed;
+        FillToggle.Visibility = fill ? Visibility.Visible : Visibility.Collapsed;
+        DashToggle.Visibility = dash ? Visibility.Visible : Visibility.Collapsed;
         PaletteHost.Visibility = visible && !mosaic && PaletteToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -245,9 +285,8 @@ internal partial class SelectionToolbar : UserControl
             if (button != clicked)
                 button.IsChecked = false;
         }
-        var tool = clicked.IsChecked == true ? _tools[clicked] : ToolKind.None;
-        SetOptionsVisible(tool != ToolKind.None, tool == ToolKind.Mosaic, tool == ToolKind.Text);
-        ToolChanged?.Invoke(tool);
+        // The overlay shows the options that fit the tool.
+        ToolChanged?.Invoke(clicked.IsChecked == true ? _tools[clicked] : ToolKind.None);
     }
 
     private void OnSizeClick(object sender, RoutedEventArgs e)

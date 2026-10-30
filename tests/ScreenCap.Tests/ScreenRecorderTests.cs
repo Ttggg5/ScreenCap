@@ -53,6 +53,43 @@ public class ScreenRecorderTests
     }
 
     [Fact]
+    public async Task Pause_StopsCapturing_AndLeavesThePausedTimeOut()
+    {
+        FakeEncoder? encoder = null;
+        var recorder = new ScreenRecorder(new Int32Rect(0, 0, 64, 48), 20, () => encoder = new FakeEncoder());
+        await recorder.StartAsync();
+        await Task.Delay(300);
+        recorder.Pause();
+        Assert.True(recorder.IsPaused);
+        var pausedAt = recorder.Elapsed;
+        await Task.Delay(700);
+        Assert.Equal(pausedAt, recorder.Elapsed); // the clock doesn't run while paused
+        recorder.Resume();
+        await Task.Delay(300);
+        await recorder.StopAsync();
+
+        Assert.NotNull(encoder);
+        Assert.InRange(encoder.EndTime!.Value.TotalMilliseconds, 450, 950); // ~600 ms recorded, not ~1300
+        var gaps = encoder.Frames.Zip(encoder.Frames.Skip(1), (a, b) => (b.Time - a.Time).TotalMilliseconds);
+        Assert.True(gaps.Max() < 250, "the pause shows up as a jump in the timestamps");
+        Assert.InRange(encoder.Frames.Count, 6, 16);
+    }
+
+    [Fact]
+    public async Task Stop_WhilePaused_Finishes()
+    {
+        FakeEncoder? encoder = null;
+        var recorder = new ScreenRecorder(new Int32Rect(0, 0, 64, 48), 20, () => encoder = new FakeEncoder());
+        await recorder.StartAsync();
+        await Task.Delay(150);
+        recorder.Pause();
+        await Task.Delay(100);
+        var stop = recorder.StopAsync();
+        Assert.Same(stop, await Task.WhenAny(stop, Task.Delay(3000)));
+        Assert.True(encoder!.Disposed);
+    }
+
+    [Fact]
     public async Task StartAsync_Throws_WhenTheEncoderCannotBeCreated()
     {
         var recorder = new ScreenRecorder(new Int32Rect(0, 0, 64, 48), 20, () => throw new InvalidOperationException("no encoder"));

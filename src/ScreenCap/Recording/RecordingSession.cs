@@ -21,6 +21,7 @@ internal static class RecordingSession
     private static RecordingControlWindow? _bar;
     private static string? _tempPath;
     private static RecordingFormat _format;
+    private static string? _title;
     private static bool _stopping;
 
     /// <summary>True from the start of recording until the file has been saved or discarded.</summary>
@@ -35,11 +36,13 @@ internal static class RecordingSession
 
     public static string DisplayName(RecordingFormat format) => format == RecordingFormat.Mp4 ? "MP4" : "GIF";
 
-    public static async void Start(Int32Rect region)
+    /// <param name="title">Title of the recorded window, for the file name.</param>
+    public static async void Start(Int32Rect region, string? title = null)
     {
         if (IsActive || region.Width < 1 || region.Height < 1)
             return;
         IsActive = true;
+        _title = title;
         _stopping = false;
 
         // Give DWM a moment to remove the selection overlay so it doesn't end up in the first frame.
@@ -69,10 +72,25 @@ internal static class RecordingSession
         _recorder = recorder;
         _frame = new RecordingFrameWindow(region);
         _bar = new RecordingControlWindow(region, () => _recorder?.Elapsed ?? TimeSpan.Zero);
+        _bar.PauseRequested += TogglePause;
         _bar.StopRequested += Stop;
         _bar.CancelRequested += Cancel;
         _frame.Show();
         _bar.Show();
+    }
+
+    public static bool IsPaused => _recorder?.IsPaused == true;
+
+    /// <summary>Pauses or resumes the recording in progress.</summary>
+    public static void TogglePause()
+    {
+        if (_recorder == null || _stopping)
+            return;
+        if (_recorder.IsPaused)
+            _recorder.Resume();
+        else
+            _recorder.Pause();
+        _bar?.SetPaused(_recorder.IsPaused);
     }
 
     public static void Stop() => Finish(save: true);
@@ -124,7 +142,7 @@ internal static class RecordingSession
         {
             if (error != null)
                 MessageBox.Show($"錄製失敗：{error.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
-            else if (save && ImageExportService.SaveRecording(temp, _format == RecordingFormat.Mp4) is { } path)
+            else if (save && ImageExportService.SaveRecording(temp, _format == RecordingFormat.Mp4, _title) is { } path)
             {
                 ClipboardService.SetFile(path);
                 Notifier.Show($"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");

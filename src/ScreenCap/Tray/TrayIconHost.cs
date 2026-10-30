@@ -55,12 +55,16 @@ internal sealed class TrayIconHost : IDisposable
             await Task.Delay(250);
             actions.ToggleRecording();
         };
+        var pause = new Forms.ToolStripMenuItem();
+        pause.Click += (_, _) => RecordingSession.TogglePause();
         var pin = new Forms.ToolStripMenuItem();
         pin.Click += (_, _) => actions.PinFromClipboard();
         menu.Opening += (_, _) =>
         {
             capture.Text = WithHotkey("截圖", AppSettings.CaptureHotkey);
             record.Text = WithHotkey(RecordingSession.IsActive ? "停止錄製" : "錄製螢幕", AppSettings.RecordHotkey);
+            pause.Visible = RecordingSession.IsActive;
+            pause.Text = RecordingSession.IsPaused ? "繼續錄製" : "暫停錄製";
             pin.Text = WithHotkey("剪貼簿貼為貼圖", AppSettings.PinHotkey);
         };
         menu.Items.Add(capture);
@@ -80,6 +84,7 @@ internal sealed class TrayIconHost : IDisposable
         };
         menu.Items.Add(delayed);
         menu.Items.Add(record);
+        menu.Items.Add(pause);
         menu.Items.Add(pin);
         menu.Items.Add("關閉所有貼圖", null, (_, _) => actions.CloseAllPins());
         menu.Items.Add("解除所有貼圖的滑鼠穿透", null, (_, _) => actions.ReleasePins());

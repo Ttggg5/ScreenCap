@@ -27,6 +27,19 @@ internal abstract class Annotation
     /// <summary>DPI scale of the overlay when the annotation was created.</summary>
     public double Scale { get; }
 
+    /// <summary>0.1–1, applied to the whole annotation.</summary>
+    public double Opacity { get; set; } = 1;
+
+    /// <summary>Draws strokes dashed; only used where <see cref="CanDash"/>.</summary>
+    public bool Dashed { get; set; }
+
+    /// <summary>Fills the shape with the color; only used where <see cref="CanFill"/>.</summary>
+    public bool Filled { get; set; }
+
+    public virtual bool CanFill => false;
+    public virtual bool CanDash => false;
+    public virtual bool HasOpacity => true;
+
     protected virtual double Thickness => Size * Scale;
 
     /// <summary>Color actually used for strokes; the highlighter makes it translucent.</summary>
@@ -55,7 +68,20 @@ internal abstract class Annotation
         return from + new Vector(Math.Cos(angle), Math.Sin(angle)) * v.Length;
     }
 
-    public abstract void Render(DrawingContext dc);
+    /// <summary>Renders the annotation with its opacity.</summary>
+    public void Draw(DrawingContext dc)
+    {
+        if (Opacity >= 1)
+        {
+            Render(dc);
+            return;
+        }
+        dc.PushOpacity(Opacity);
+        Render(dc);
+        dc.Pop();
+    }
+
+    protected abstract void Render(DrawingContext dc);
 
     public virtual bool HitTest(Point point, double tolerance) =>
         GetOutline().StrokeContains(new Pen(Brushes.Black, Thickness + 2 * tolerance), point);
@@ -86,6 +112,12 @@ internal abstract class Annotation
             EndLineCap = PenLineCap.Round,
             LineJoin = PenLineJoin.Round,
         };
+        if (Dashed && CanDash)
+        {
+            // In multiples of the thickness; round caps add half a thickness to each end of a dash.
+            pen.DashStyle = new DashStyle([1.5, 2.5], 0);
+            pen.DashCap = PenLineCap.Round;
+        }
         pen.Freeze();
         return pen;
     }
@@ -154,17 +186,27 @@ internal abstract class DragAnnotation : Annotation
     }
 }
 
-internal sealed class RectAnnotation(Point start, Color color, double size, double scale)
+/// <summary>Rectangle or ellipse: outlined, optionally filled with the color.</summary>
+internal abstract class ShapeAnnotation(Point start, Color color, double size, double scale)
     : DragAnnotation(start, color, size, scale)
 {
-    public override void Render(DrawingContext dc) => dc.DrawRectangle(null, CreatePen(), Bounds);
+    public override bool CanFill => true;
+    public override bool CanDash => true;
+
+    // A filled shape can be grabbed anywhere inside it.
+    public override bool HitTest(Point point, double tolerance) =>
+        (Filled && GetOutline().FillContains(point)) || base.HitTest(point, tolerance);
+
+    protected override void Render(DrawingContext dc) =>
+        dc.DrawGeometry(Filled ? new SolidColorBrush(Color) : null, CreatePen(), GetOutline());
 }
 
-internal sealed class EllipseAnnotation(Point start, Color color, double size, double scale)
-    : DragAnnotation(start, color, size, scale)
-{
-    public override void Render(DrawingContext dc) => dc.DrawGeometry(null, CreatePen(), GetOutline());
+internal sealed class RectAnnotation(Point start, Color color, double size, double scale)
+    : ShapeAnnotation(start, color, size, scale);
 
+internal sealed class EllipseAnnotation(Point start, Color color, double size, double scale)
+    : ShapeAnnotation(start, color, size, scale)
+{
     protected override Geometry GetOutline()
     {
         var b = Bounds;
@@ -172,9 +214,12 @@ internal sealed class EllipseAnnotation(Point start, Color color, double size, d
     }
 }
 
-internal sealed class ArrowAnnotation(Point start, Color color, double size, double scale)
+/// <summary>A straight line, adjusted by dragging either end.</summary>
+internal class LineAnnotation(Point start, Color color, double size, double scale)
     : DragAnnotation(start, color, size, scale)
 {
+    public override bool CanDash => true;
+
     public override bool IsEmpty => (End - Start).Length < 3;
 
     // The two ends rather than a bounding box.
@@ -184,14 +229,20 @@ internal sealed class ArrowAnnotation(Point start, Color color, double size, dou
 
     public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
     {
-        var o = (ArrowAnnotation)origin;
+        var o = (LineAnnotation)origin;
         Start = handle == 0 ? o.Start + delta : o.Start;
         End = handle == 1 ? o.End + delta : o.End;
     }
 
     protected override Geometry GetOutline() => new LineGeometry(Start, End);
 
-    public override void Render(DrawingContext dc)
+    protected override void Render(DrawingContext dc) => dc.DrawLine(CreatePen(), Start, End);
+}
+
+internal sealed class ArrowAnnotation(Point start, Color color, double size, double scale)
+    : LineAnnotation(start, color, size, scale)
+{
+    protected override void Render(DrawingContext dc)
     {
         var v = End - Start;
         double length = v.Length;
@@ -223,6 +274,8 @@ internal class PenAnnotation : Annotation
     private List<Point> _points = new();
 
     public PenAnnotation(Point start, Color color, double size, double scale) : base(color, size, scale) => _points.Add(start);
+
+    public override bool CanDash => true;
 
     public override Rect Bounds
     {
@@ -264,7 +317,7 @@ internal class PenAnnotation : Annotation
         return geometry;
     }
 
-    public override void Render(DrawingContext dc)
+    protected override void Render(DrawingContext dc)
     {
         if (_points.Count == 1)
             dc.DrawEllipse(new SolidColorBrush(StrokeColor), null, _points[0], Thickness / 2, Thickness / 2);
@@ -277,6 +330,8 @@ internal class PenAnnotation : Annotation
 internal sealed class HighlighterAnnotation(Point start, Color color, double size, double scale)
     : PenAnnotation(start, color, size, scale)
 {
+    public override bool CanDash => false;
+
     // Size levels 2/4/6 → 8/16/24 DIP wide.
     protected override double Thickness => Size * 4 * Scale;
 
@@ -301,7 +356,7 @@ internal sealed class NumberAnnotation(Point center, int number, Color color, do
 
     public override void MoveFrom(Annotation origin, Vector delta) => Center = ((NumberAnnotation)origin).Center + delta;
 
-    public override void Render(DrawingContext dc)
+    protected override void Render(DrawingContext dc)
     {
         dc.DrawEllipse(new SolidColorBrush(Color), new Pen(Brushes.White, Math.Max(1, 1.5 * Scale)), Center, Radius, Radius);
         var typeface = new Typeface(TextAnnotation.Font, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
@@ -361,7 +416,7 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
 
     public override void MoveFrom(Annotation origin, Vector delta) => Position = ((TextAnnotation)origin).Position + delta;
 
-    public override void Render(DrawingContext dc)
+    protected override void Render(DrawingContext dc)
     {
         if (Background)
         {
@@ -406,9 +461,11 @@ internal sealed class MosaicAnnotation(Point start, ScreenSnapshot snapshot, int
     // 1 → 3px, 4 → 9px, 10 → 21px box radius (in DIPs); three passes approximate a gaussian.
     internal int BlurRadius => Math.Max(1, (int)Math.Round((1 + Strength * 2) * Scale));
 
+    public override bool HasOpacity => false;
+
     public override bool HitTest(Point point, double tolerance) => Bounds.Contains(point);
 
-    public override void Render(DrawingContext dc)
+    protected override void Render(DrawingContext dc)
     {
         var rect = PixelRect();
         if (rect.Width < 1 || rect.Height < 1)

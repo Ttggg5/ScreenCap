@@ -19,6 +19,7 @@ internal sealed class PinWindow : Window
     private static readonly List<PinWindow> OpenPins = new();
 
     private BitmapSource _image;
+    private readonly string? _title; // of the captured window, for file names
     private readonly Image _view;
     private int _screenX, _screenY;
     private double _zoom = 1;
@@ -26,9 +27,10 @@ internal sealed class PinWindow : Window
     private bool _clickThrough;
     private bool _editing;
 
-    private PinWindow(BitmapSource image, int screenX, int screenY)
+    private PinWindow(BitmapSource image, int screenX, int screenY, string? title)
     {
         _image = image;
+        _title = title;
         _screenX = screenX;
         _screenY = screenY;
 
@@ -66,9 +68,10 @@ internal sealed class PinWindow : Window
         };
     }
 
-    public static void ShowAt(BitmapSource image, int screenX, int screenY)
+    /// <param name="title">Title of the window the image came from, used when saving.</param>
+    public static void ShowAt(BitmapSource image, int screenX, int screenY, string? title = null)
     {
-        var pin = new PinWindow(image, screenX, screenY);
+        var pin = new PinWindow(image, screenX, screenY, title);
         OpenPins.Add(pin);
         pin.Closed += (_, _) => OpenPins.Remove(pin);
         pin.Show();
@@ -121,7 +124,7 @@ internal sealed class PinWindow : Window
         menu.Items.Add(MenuItem("文字辨識", "O", () => OcrResultWindow.ShowFor(_image)));
         menu.Items.Add(MenuItem("複製", "Ctrl+C", Copy));
         menu.Items.Add(MenuItem("另存新檔…", "Ctrl+S", Save));
-        menu.Items.Add(MenuItem("快速存檔", "Ctrl+Shift+S", () => CaptureSession.QuickSave(_image)));
+        menu.Items.Add(MenuItem("快速存檔", "Ctrl+Shift+S", () => CaptureSession.QuickSave(_image, _title)));
         menu.Items.Add(new Separator());
         menu.Items.Add(MenuItem("向左旋轉", "1", () => Transform(new RotateTransform(-90))));
         menu.Items.Add(MenuItem("向右旋轉", "2", () => Transform(new RotateTransform(90))));
@@ -196,7 +199,7 @@ internal sealed class PinWindow : Window
 
     private void Copy() => ClipboardService.SetImage(_image);
 
-    private void Save() => ImageExportService.Save(_image, this);
+    private void Save() => ImageExportService.Save(_image, this, _title);
 
     private void ResetView()
     {
@@ -244,7 +247,7 @@ internal sealed class PinWindow : Window
                 Copy();
                 break;
             case Key.S when ctrl && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift):
-                CaptureSession.QuickSave(_image);
+                CaptureSession.QuickSave(_image, _title);
                 break;
             case Key.S when ctrl:
                 Save();

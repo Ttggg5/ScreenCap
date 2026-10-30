@@ -15,13 +15,15 @@ namespace ScreenCap.Scrolling;
 internal sealed class ScrollResultWindow : Window
 {
     private readonly BitmapSource _image;
+    private readonly string? _title;
     private readonly Image _view;
     private readonly ScrollViewer _scroller;
     private readonly TextBlock _status;
 
-    private ScrollResultWindow(BitmapSource image)
+    private ScrollResultWindow(BitmapSource image, string? title)
     {
         _image = image;
+        _title = title;
         Title = "ScreenCap 長截圖";
         Width = 760;
         Height = 760;
@@ -53,7 +55,7 @@ internal sealed class ScrollResultWindow : Window
         var copy = new Button { Content = "複製", MinWidth = 90, ToolTip = "Ctrl+C" }.Themed(StyleProperty, "AccentButton");
         copy.Click += (_, _) => Copy();
         var save = new Button { Content = "另存新檔…", MinWidth = 90, Margin = new Thickness(8, 0, 0, 0), ToolTip = "Ctrl+S" };
-        save.Click += (_, _) => ImageExportService.Save(_image, this);
+        save.Click += (_, _) => ImageExportService.Save(_image, this, _title);
         var ocr = new Button { Content = "文字辨識", MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
         ocr.Click += (_, _) => OcrResultWindow.ShowFor(_image);
         var close = new Button { Content = "關閉", MinWidth = 90, Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
@@ -87,15 +89,16 @@ internal sealed class ScrollResultWindow : Window
             }
             else if (ctrl && e.Key == Key.S)
             {
-                ImageExportService.Save(_image, this);
+                ImageExportService.Save(_image, this, _title);
                 e.Handled = true;
             }
         };
     }
 
-    public static void ShowFor(BitmapSource image)
+    /// <param name="title">Title of the captured window, for the file name.</param>
+    public static void ShowFor(BitmapSource image, string? title = null)
     {
-        var window = new ScrollResultWindow(image);
+        var window = new ScrollResultWindow(image, title);
         window.Show();
         window.Activate();
     }

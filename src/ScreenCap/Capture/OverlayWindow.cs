@@ -39,7 +39,8 @@ internal enum OverlayMode
 }
 
 /// <param name="Width">Selection size in physical pixels (used for recording).</param>
-internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, int ScreenX, int ScreenY, int Width = 0, int Height = 0)
+/// <param name="Title">Title of the window under the selection, for file names.</param>
+internal sealed record OverlayResult(OverlayAction Action, BitmapSource? Image, int ScreenX, int ScreenY, int Width = 0, int Height = 0, string? Title = null)
 {
     public static readonly OverlayResult Cancelled = new(OverlayAction.Cancel, null, 0, 0);
 }
@@ -87,6 +88,9 @@ internal sealed class OverlayWindow : Window
     private double _size;
     private int _mosaicStrength = MosaicAnnotation.DefaultStrength;
     private bool _mosaicBlur;
+    private bool _filled;
+    private bool _dashed;
+    private int _opacity = 100; // percent
     private bool _picking; // eyedropper: the next click picks a color from the screen
     private Annotation? _drawing;
 
@@ -316,6 +320,28 @@ internal sealed class OverlayWindow : Window
                     text.Background = background;
                 });
             }
+        };
+        _toolbar.ShapeStyleChanged += (filled, dashed) =>
+        {
+            _filled = filled;
+            _dashed = dashed;
+            Restyle(a =>
+            {
+                a.Filled = a.CanFill && filled;
+                a.Dashed = a.CanDash && dashed;
+            });
+        };
+        _toolbar.OpacityChanged += (percent, newGesture) =>
+        {
+            _opacity = percent;
+            StyleTextBox();
+            if (_selected is not { HasOpacity: true } selected)
+                return;
+            // One undo step per slider drag, not per tick.
+            if (newGesture)
+                _annotations.Checkpoint();
+            selected.Opacity = percent / 100.0;
+            InvalidateAnnotations();
         };
         _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
         _toolbar.OcrRequested += () => Finish(OverlayAction.Ocr);
@@ -578,7 +604,7 @@ internal sealed class OverlayWindow : Window
         int annotationHandle = HitAnnotationHandle(p);
         if (annotationHandle >= 0)
         {
-            Cursor = _selected is ArrowAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
+            Cursor = _selected is LineAnnotation ? Cursors.SizeAll : HandleCursor(annotationHandle);
             return;
         }
         if (HitAnnotation(p) != null)
@@ -846,16 +872,27 @@ internal sealed class OverlayWindow : Window
 
     // ---------------------------------------------------------------- annotations
 
-    private Annotation CreateAnnotation(Point p) => _tool switch
+    private Annotation CreateAnnotation(Point p) => ApplyShapeStyle(_tool switch
     {
         ToolKind.Rectangle => new RectAnnotation(p, _color, _size, _scale),
         ToolKind.Ellipse => new EllipseAnnotation(p, _color, _size, _scale),
         ToolKind.Arrow => new ArrowAnnotation(p, _color, _size, _scale),
+        ToolKind.Line => new LineAnnotation(p, _color, _size, _scale),
         ToolKind.Highlighter => new HighlighterAnnotation(p, _color, _size, _scale),
         ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, _size, _scale),
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
         _ => new PenAnnotation(p, _color, _size, _scale),
-    };
+    });
+
+    /// <summary>Applies the current fill, dash and opacity choices where the annotation supports them.</summary>
+    private Annotation ApplyShapeStyle(Annotation annotation)
+    {
+        annotation.Filled = annotation.CanFill && _filled;
+        annotation.Dashed = annotation.CanDash && _dashed;
+        if (annotation.HasOpacity)
+            annotation.Opacity = _opacity / 100.0;
+        return annotation;
+    }
 
     private int NextNumber() => _annotations.Items.OfType<NumberAnnotation>().Select(n => n.Number).DefaultIfEmpty(0).Max() + 1;
 
@@ -883,6 +920,13 @@ internal sealed class OverlayWindow : Window
             _color = annotation.Color;
             _size = annotation.Size;
             _toolbar.SetStyle(_color, _size);
+            // Only take over the options this annotation has, so e.g. selecting an arrow keeps the fill choice.
+            if (annotation.CanFill)
+                _filled = annotation.Filled;
+            if (annotation.CanDash)
+                _dashed = annotation.Dashed;
+            _opacity = (int)Math.Round(annotation.Opacity * 100);
+            _toolbar.SetShapeStyle(_filled, _dashed, _opacity);
             if (annotation is TextAnnotation text)
             {
                 _textBold = text.Bold;
@@ -890,9 +934,11 @@ internal sealed class OverlayWindow : Window
                 _toolbar.SetTextStyle(_textBold, _textBackground);
             }
         }
-        bool mosaicOptions = annotation is MosaicAnnotation || (annotation == null && _tool == ToolKind.Mosaic);
+        // Without a selection, show the options of the shape the current tool would draw.
+        var sample = annotation ?? (_tool is ToolKind.None or ToolKind.Text ? null : CreateAnnotation(default));
         bool textOptions = annotation is TextAnnotation || (annotation == null && _tool == ToolKind.Text);
-        _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, mosaicOptions, textOptions);
+        _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, sample is MosaicAnnotation, textOptions,
+            fill: sample?.CanFill == true, dash: sample?.CanDash == true);
     }
 
     /// <summary>Topmost annotation under the point, only within the visible selection.</summary>
@@ -974,8 +1020,10 @@ internal sealed class OverlayWindow : Window
         _size = text.Size;
         _textBold = text.Bold;
         _textBackground = text.Background;
+        _opacity = (int)Math.Round(text.Opacity * 100);
         _toolbar.SetStyle(_color, _size);
         _toolbar.SetTextStyle(_textBold, _textBackground);
+        _toolbar.SetShapeStyle(_filled, _dashed, _opacity);
         _toolbar.SetOptionsVisible(true, text: true);
         BeginText(new Point(text.Position.X - 3, text.Position.Y - 1), text.Text, replacing: true);
     }
@@ -1022,6 +1070,7 @@ internal sealed class OverlayWindow : Window
         _textBox.Foreground = _textBox.CaretBrush = text;
         _textBox.Background = _textBackground ? new SolidColorBrush(_color) : Brushes.Transparent;
         _textBox.FontWeight = _textBold ? FontWeights.Bold : FontWeights.Normal;
+        _textBox.Opacity = Math.Max(0.4, _opacity / 100.0); // keep the box itself findable
     }
 
     private void CommitText()
@@ -1035,7 +1084,7 @@ internal sealed class OverlayWindow : Window
         {
             // Offset by the TextBox border and internal text margin so the text stays where it was typed.
             var position = new Point(_textPos.X + 3, _textPos.Y + 1);
-            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale, _textBold, _textBackground);
+            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale, _textBold, _textBackground) { Opacity = _opacity / 100.0 };
             _annotations.Add(annotation, checkpoint: !_textReplacing);
             Select(annotation);
             InvalidateAnnotations();
@@ -1069,6 +1118,7 @@ internal sealed class OverlayWindow : Window
         if (_state != State.Selected || !HasSelection)
             return;
         int x = (int)_sel.X + _snap.Left, y = (int)_sel.Y + _snap.Top;
+        string? title = _mode == OverlayMode.EditPin ? null : _detector.TitleAt(_sel);
 
         if (_mode != OverlayMode.EditPin)
             CaptureSession.AddHistory(new Int32Rect(x, y, (int)_sel.Width, (int)_sel.Height));
@@ -1077,14 +1127,14 @@ internal sealed class OverlayWindow : Window
         if (_mode == OverlayMode.Record || action is OverlayAction.Record or OverlayAction.ScrollCapture)
         {
             var region = _mode == OverlayMode.Record ? OverlayAction.Record : action;
-            Result = new OverlayResult(region, null, x, y, (int)_sel.Width, (int)_sel.Height);
+            Result = new OverlayResult(region, null, x, y, (int)_sel.Width, (int)_sel.Height, title);
             Close();
             return;
         }
 
         CommitText();
         var image = Compositor.Compose(_snap, _sel, _annotations.Items);
-        Result = new OverlayResult(action, image, x, y);
+        Result = new OverlayResult(action, image, x, y, Title: title);
         Close();
     }
 

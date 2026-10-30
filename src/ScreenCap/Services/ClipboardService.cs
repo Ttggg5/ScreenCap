@@ -37,6 +37,18 @@ internal static class ClipboardService
         }
     }
 
+    public static string? GetText()
+    {
+        try
+        {
+            return Clipboard.ContainsText() ? Clipboard.GetText() : null;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+    }
+
     // The clipboard can be briefly locked by another process.
     private static void Retry(Action action)
     {

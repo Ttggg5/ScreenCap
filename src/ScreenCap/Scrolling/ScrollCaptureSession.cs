@@ -20,7 +20,8 @@ internal static class ScrollCaptureSession
 
     public static bool IsActive { get; private set; }
 
-    public static async void Start(Int32Rect region)
+    /// <param name="title">Title of the captured window, for the file name.</param>
+    public static async void Start(Int32Rect region, string? title = null)
     {
         if (IsActive)
             return;
@@ -92,7 +93,7 @@ internal static class ScrollCaptureSession
             return;
         if (notice != null)
             Notifier.Show(notice);
-        ScrollResultWindow.ShowFor(stitcher.ToBitmap());
+        ScrollResultWindow.ShowFor(stitcher.ToBitmap(), title);
     }
 
     /// <summary>Wheel-scrolls the window under the center of the region.</summary>

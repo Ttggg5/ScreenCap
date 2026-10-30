@@ -22,7 +22,7 @@ internal static class Compositor
             dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
             dc.PushTransform(new TranslateTransform(-selection.X, -selection.Y));
             foreach (var annotation in annotations)
-                annotation.Render(dc);
+                annotation.Draw(dc);
             dc.Pop();
             dc.Pop();
         }

@@ -8,7 +8,7 @@ using ScreenCap.Theme;
 
 namespace ScreenCap.Settings;
 
-/// <summary>Preferences dialog: hotkeys, save folder and start-at-sign-in.</summary>
+/// <summary>Preferences dialog: hotkeys, save folder, file names and start-at-sign-in.</summary>
 internal sealed class SettingsWindow : Window
 {
 
@@ -16,6 +16,8 @@ internal sealed class SettingsWindow : Window
     private readonly HotkeyBox _record = new(AppSettings.RecordHotkey);
     private readonly HotkeyBox _pin = new(AppSettings.PinHotkey);
     private readonly TextBox _folder = new() { IsReadOnly = true, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly TextBox _pattern = new() { Text = AppSettings.FileNamePattern, VerticalContentAlignment = VerticalAlignment.Center };
+    private readonly TextBlock _patternPreview = Hint("");
     private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled, Margin = new Thickness(0, 4, 0, 0) };
     private readonly ComboBox _theme = new();
     private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
@@ -53,6 +55,11 @@ internal sealed class SettingsWindow : Window
         folderRow.Children.Add(browse);
         folderRow.Children.Add(_folder);
         body.Children.Add(folderRow);
+        body.Children.Add(Row("檔名格式", _pattern));
+        body.Children.Add(Hint("{date} 日期、{time} 時間、{title} 截圖的視窗標題、{n} 流水號（001、002…），也可以用 {yyyy-MM-dd} 這類日期格式。"));
+        body.Children.Add(_patternPreview);
+        _pattern.TextChanged += (_, _) => UpdatePatternPreview();
+        UpdatePatternPreview();
 
         body.Children.Add(Heading("一般"));
         body.Children.Add(Row("外觀", _theme));
@@ -103,6 +110,11 @@ internal sealed class SettingsWindow : Window
         return grid;
     }
 
+    private string Pattern => string.IsNullOrWhiteSpace(_pattern.Text) ? FileNameTemplate.Default : _pattern.Text.Trim();
+
+    private void UpdatePatternPreview() =>
+        _patternPreview.Text = $"範例：{FileNameTemplate.Expand(Pattern, DateTime.Now, "Google Chrome")}.png";
+
     private void BrowseFolder()
     {
         var dialog = new OpenFolderDialog { Title = "選擇存檔資料夾", InitialDirectory = _folder.Text };
@@ -116,6 +128,7 @@ internal sealed class SettingsWindow : Window
         _record.Hotkey = AppSettings.DefaultRecordHotkey;
         _pin.Hotkey = AppSettings.DefaultPinHotkey;
         _folder.Text = AppSettings.DefaultSaveFolder;
+        _pattern.Text = FileNameTemplate.Default;
         _theme.SelectedIndex = (int)AppTheme.System;
         _cursor.IsChecked = false;
     }
@@ -133,6 +146,7 @@ internal sealed class SettingsWindow : Window
         AppSettings.RecordHotkey = _record.Hotkey;
         AppSettings.PinHotkey = _pin.Hotkey;
         AppSettings.SaveFolder = _folder.Text;
+        AppSettings.FileNamePattern = Pattern;
         AppSettings.CaptureCursor = _cursor.IsChecked == true;
         var theme = (AppTheme)((ComboBoxItem)_theme.SelectedItem).Tag;
         if (theme != AppSettings.Theme)

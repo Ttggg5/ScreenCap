@@ -118,16 +118,23 @@ internal sealed class RecordingFrameWindow : RecordingChromeWindow
     }
 }
 
-/// <summary>Small bar next to the region with the elapsed time and stop/cancel buttons.</summary>
+/// <summary>
+/// Small bar next to the region with the elapsed time and pause/stop/cancel buttons.
+/// It can be dragged out of the way; it stays out of the recording wherever it is.
+/// </summary>
 internal sealed class RecordingControlWindow : RecordingChromeWindow
 {
-    private const double BarWidth = 236, BarHeight = 40, Gap = 8; // DIP
+    private const double BarWidth = 300, BarHeight = 40, Gap = 8; // DIP
+    private static readonly Color Red = Color.FromRgb(0xE5, 0x39, 0x35);
+    private static readonly Color Amber = Color.FromRgb(0xF9, 0xA8, 0x25);
 
     private readonly Int32Rect _region;
     private readonly Func<TimeSpan> _elapsed;
     private readonly TextBlock _time;
     private readonly TextBlock _status;
-    private readonly Button _stop, _cancel;
+    private readonly Button _pause, _stop, _cancel;
+    private bool _paused;
+    private bool _dragged; // moved by the user: don't snap back next to the region
     private readonly Ellipse _dot;
     private readonly DispatcherTimer _timer;
 
@@ -136,11 +143,13 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
         _region = region;
         _elapsed = elapsed;
 
-        _dot = new Ellipse { Width = 10, Height = 10, Fill = new SolidColorBrush(Color.FromRgb(0xE5, 0x39, 0x35)), Margin = new Thickness(12, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        _dot = new Ellipse { Width = 10, Height = 10, Fill = new SolidColorBrush(Red), Margin = new Thickness(12, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
         _time = new TextBlock { Text = "00:00", Foreground = Brushes.White, FontFamily = new FontFamily("Consolas"), FontSize = 15, VerticalAlignment = VerticalAlignment.Center };
         _status = new TextBlock { Text = "錄製中", Foreground = new SolidColorBrush(Color.FromRgb(0xBB, 0xBB, 0xBB)), FontSize = 12, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        _stop = CreateButton("停止", Color.FromRgb(0xE5, 0x39, 0x35));
+        _pause = CreateButton("暫停", Color.FromRgb(0x55, 0x55, 0x55));
+        _stop = CreateButton("停止", Red);
         _cancel = CreateButton("取消", Color.FromRgb(0x55, 0x55, 0x55));
+        _pause.Click += (_, _) => PauseRequested?.Invoke();
         _stop.Click += (_, _) => StopRequested?.Invoke();
         _cancel.Click += (_, _) => CancelRequested?.Invoke();
 
@@ -149,6 +158,7 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
         left.Children.Add(_time);
         left.Children.Add(_status);
         var right = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 0, 6, 0) };
+        right.Children.Add(_pause);
         right.Children.Add(_stop);
         right.Children.Add(_cancel);
         var grid = new Grid();
@@ -160,6 +170,7 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
             Background = new SolidColorBrush(Color.FromArgb(0xEE, 0x20, 0x20, 0x20)),
             CornerRadius = new CornerRadius(8),
             Child = grid,
+            Cursor = System.Windows.Input.Cursors.SizeAll,
         };
         FontFamily = new FontFamily("Microsoft JhengHei UI, Segoe UI");
         Width = BarWidth;
@@ -169,14 +180,26 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
         Closed += (_, _) => _timer.Stop();
     }
 
+    public event Action? PauseRequested;
     public event Action? StopRequested;
+
+    /// <summary>Shows the paused state: steady amber dot, "已暫停", and a resume button.</summary>
+    public void SetPaused(bool paused)
+    {
+        _paused = paused;
+        _status.Text = paused ? "已暫停" : "錄製中";
+        _pause.Content = paused ? "繼續" : "暫停";
+        ((SolidColorBrush)_dot.Fill).Color = paused ? Amber : Red;
+        _dot.Opacity = 1;
+        Tick();
+    }
     public event Action? CancelRequested;
 
     public void ShowSaving()
     {
         _timer.Stop();
         _status.Text = "處理中…";
-        _stop.IsEnabled = _cancel.IsEnabled = false;
+        _pause.IsEnabled = _stop.IsEnabled = _cancel.IsEnabled = false;
         _dot.Fill = Brushes.Gray;
     }
 
@@ -184,8 +207,24 @@ internal sealed class RecordingControlWindow : RecordingChromeWindow
     {
         var t = _elapsed();
         _time.Text = t.TotalHours >= 1 ? t.ToString(@"h\:mm\:ss") : t.ToString(@"mm\:ss");
-        _dot.Opacity = t.Milliseconds < 500 ? 1 : 0.35; // blink
+        if (!_paused)
+            _dot.Opacity = t.Milliseconds < 500 ? 1 : 0.35; // blink
     }
 
-    protected override void Place() => PlaceBar(_region, BarWidth, BarHeight, Gap);
+    protected override void Place()
+    {
+        if (!_dragged)
+            PlaceBar(_region, BarWidth, BarHeight, Gap);
+    }
+
+    // Buttons handle their own presses, so this only sees presses on the bar itself.
+    protected override void OnMouseLeftButtonDown(System.Windows.Input.MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        if (e.Handled)
+            return;
+        _dragged = true;
+        DragMove();
+        e.Handled = true;
+    }
 }

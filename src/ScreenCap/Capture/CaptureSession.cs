@@ -121,11 +121,11 @@ internal static class CaptureSession
     private static void HandleResult(OverlayResult result)
     {
         if (result.Action == OverlayAction.Record)
-            RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height));
+            RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height), result.Title);
         else if (result.Action == OverlayAction.ScrollCapture)
-            ScrollCaptureSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height));
+            ScrollCaptureSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height), result.Title);
         else if (result.Action == OverlayAction.Pin && result.Image != null)
-            PinWindow.ShowAt(result.Image, result.ScreenX, result.ScreenY);
+            PinWindow.ShowAt(result.Image, result.ScreenX, result.ScreenY, result.Title);
         else
             Output(result);
     }
@@ -141,10 +141,10 @@ internal static class CaptureSession
                 ClipboardService.SetImage(result.Image);
                 break;
             case OverlayAction.Save:
-                ImageExportService.Save(result.Image);
+                ImageExportService.Save(result.Image, title: result.Title);
                 break;
             case OverlayAction.QuickSave:
-                QuickSave(result.Image);
+                QuickSave(result.Image, result.Title);
                 break;
             case OverlayAction.Ocr:
                 OcrResultWindow.ShowFor(result.Image);
@@ -152,9 +152,9 @@ internal static class CaptureSession
         }
     }
 
-    public static void QuickSave(BitmapSource image)
+    public static void QuickSave(BitmapSource image, string? title = null)
     {
-        if (ImageExportService.QuickSave(image) is { } path)
+        if (ImageExportService.QuickSave(image, title) is { } path)
             Notifier.Show($"已儲存：{path}");
     }
 }

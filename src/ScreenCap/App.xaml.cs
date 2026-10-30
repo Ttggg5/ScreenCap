@@ -92,15 +92,21 @@ public partial class App : Application
             CaptureSession.Start(recordMode: true);
     }
 
+    /// <summary>Pins the clipboard image; text is pinned as an image too, and color codes as a swatch.</summary>
     private void PinFromClipboard()
     {
+        GetCursorPos(out var p);
         var image = ClipboardService.GetImage();
         if (image == null)
         {
-            Notifier.Show("剪貼簿中沒有圖片。");
+            double scale = GetDpiForMonitor(MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, out uint dpi, out _) == 0 ? dpi / 96.0 : 1;
+            image = TextPinRenderer.FromText(ClipboardService.GetText(), scale);
+        }
+        if (image == null)
+        {
+            Notifier.Show("剪貼簿中沒有圖片或文字。");
             return;
         }
-        GetCursorPos(out var p);
         PinWindow.ShowAt(image, p.X, p.Y);
     }
 
