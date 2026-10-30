@@ -85,7 +85,9 @@ internal sealed class OverlayWindow : Window
 
     private ToolKind _tool = ToolKind.None;
     private Color _color;
-    private double _size;
+    // Each tool keeps its own size, since a width, a font size and a marker size have different ranges.
+    private readonly Dictionary<ToolKind, double> _sizes = new();
+    private int _spotlightDim = SpotlightAnnotation.DefaultDim;
     private int _mosaicStrength = MosaicAnnotation.DefaultStrength;
     private bool _mosaicBlur;
     private bool _filled;
@@ -105,8 +107,7 @@ internal sealed class OverlayWindow : Window
     private double _textSize;
     private bool _textReplacing;     // re-editing an existing text annotation
 
-    private bool _textBold;
-    private bool _textBackground;
+    private TextStyle _textStyle;
 
     private int _historyIndex = -1; // position while stepping through earlier capture regions with , and .
 
@@ -118,7 +119,8 @@ internal sealed class OverlayWindow : Window
         _snap = snap;
         _detector = detector;
         _color = _toolbar.SelectedColor;
-        _size = _toolbar.SelectedSize;
+
+        _textStyle = _toolbar.CurrentTextStyle;
         _magnifier.UseRgb = AppSettings.CopyColorAsRgb;
 
         Title = "ScreenCap";
@@ -266,15 +268,36 @@ internal sealed class OverlayWindow : Window
             StyleTextBox();
             Restyle(a => a.Color = c);
         };
-        _toolbar.ThicknessChanged += s =>
+        _toolbar.ThicknessChanged += (size, newGesture) =>
         {
-            _size = s;
             if (_textBox != null)
             {
-                _textSize = s;
-                _textBox.FontSize = TextAnnotation.FontSizeFor(s, _scale);
+                _sizes[ToolKind.Text] = _textSize = size;
+                _textBox.FontSize = TextAnnotation.FontSizeFor(size, _scale);
+                return;
             }
-            Restyle(a => a.Size = s);
+            _sizes[_selected != null ? KindOf(_selected) : _tool] = size;
+            if (_selected == null)
+                return;
+            // One undo step per slider drag, not per tick.
+            if (newGesture)
+                _annotations.Checkpoint();
+            _selected.Size = size;
+            InvalidateAnnotations();
+            Refresh();
+        };
+        _toolbar.SpotlightDimChanged += (dim, newGesture) =>
+        {
+            _spotlightDim = dim;
+            var spotlights = _annotations.Items.OfType<SpotlightAnnotation>().ToList();
+            if (spotlights.Count == 0)
+                return;
+            if (newGesture)
+                _annotations.Checkpoint();
+            // All spotlights share one dimmed layer, so they change together.
+            foreach (var spotlight in spotlights)
+                spotlight.Dim = dim;
+            InvalidateAnnotations();
         };
         _toolbar.MosaicStrengthChanged += (strength, newGesture) =>
         {
@@ -305,21 +328,24 @@ internal sealed class OverlayWindow : Window
         _toolbar.PinRequested += () => Finish(OverlayAction.Pin);
         _toolbar.SaveRequested += () => Finish(OverlayAction.Save);
         _toolbar.CopyRequested += () => Finish(OverlayAction.Copy);
-        _toolbar.CancelRequested += Close;
-        _toolbar.TextStyleChanged += (bold, background) =>
+        // After typing a size or opacity, keep typing the text annotation, or return the shortcuts to the overlay.
+        _toolbar.NumberEditingFinished += () =>
         {
-            _textBold = bold;
-            _textBackground = background;
+            if (_textBox != null)
+                _textBox.Focus();
+            else
+                FocusOverlay();
+        };
+        _toolbar.SetConfirmAction(ConfirmAction);
+        _toolbar.CancelRequested += Close;
+        _toolbar.TextStyleChanged += style =>
+        {
+            _textStyle = style;
             StyleTextBox();
             if (_selected is TextAnnotation)
-            {
-                Restyle(a =>
-                {
-                    var text = (TextAnnotation)a;
-                    text.Bold = bold;
-                    text.Background = background;
-                });
-            }
+                Restyle(a => ((TextAnnotation)a).Style = style);
+            if (_textBox != null)
+                Dispatcher.BeginInvoke(() => _textBox?.Focus(), DispatcherPriority.Input); // keep typing after picking a font
         };
         _toolbar.ShapeStyleChanged += (filled, dashed) =>
         {
@@ -418,7 +444,7 @@ internal sealed class OverlayWindow : Window
 
                 if (e.ClickCount == 2 && inside && _tool == ToolKind.None)
                 {
-                    Finish(OverlayAction.Copy);
+                    Finish(ConfirmAction);
                     return;
                 }
 
@@ -638,7 +664,9 @@ internal sealed class OverlayWindow : Window
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
         bool shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-        // Typing in a toolbar field (the palette's HEX box); Esc returns to the overlay.
+        // Typing in a toolbar field: number boxes handle Enter / Esc themselves; in the palette's HEX box, Esc returns to the overlay.
+        if (Keyboard.FocusedElement is NumberBox)
+            return;
         if (Keyboard.FocusedElement is TextBox field && field != _textBox)
         {
             if (e.Key == Key.Escape)
@@ -694,6 +722,8 @@ internal sealed class OverlayWindow : Window
                 Close();
                 break;
             case Key.Enter when selected:
+                Finish(ConfirmAction);
+                break;
             case Key.C when ctrl && selected:
                 Finish(OverlayAction.Copy);
                 break;
@@ -746,6 +776,9 @@ internal sealed class OverlayWindow : Window
     /// Moves keyboard focus back to the overlay. Focusing a window restores its remembered focused
     /// element, so that is reset first.
     /// </summary>
+    /// <summary>What Enter and double-click do; editing a pin always hands the result back by copying.</summary>
+    private OverlayAction ConfirmAction => _mode == OverlayMode.EditPin ? OverlayAction.Copy : AppSettings.ConfirmAction;
+
     private void FocusOverlay()
     {
         FocusManager.SetFocusedElement(this, this);
@@ -874,15 +907,34 @@ internal sealed class OverlayWindow : Window
 
     private Annotation CreateAnnotation(Point p) => ApplyShapeStyle(_tool switch
     {
-        ToolKind.Rectangle => new RectAnnotation(p, _color, _size, _scale),
-        ToolKind.Ellipse => new EllipseAnnotation(p, _color, _size, _scale),
-        ToolKind.Arrow => new ArrowAnnotation(p, _color, _size, _scale),
-        ToolKind.Line => new LineAnnotation(p, _color, _size, _scale),
-        ToolKind.Highlighter => new HighlighterAnnotation(p, _color, _size, _scale),
-        ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, _size, _scale),
+        ToolKind.Rectangle => new RectAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Ellipse => new EllipseAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Arrow => new ArrowAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Line => new LineAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Highlighter => new HighlighterAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, SizeOf(_tool), _scale),
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
-        _ => new PenAnnotation(p, _color, _size, _scale),
+        ToolKind.Spotlight => new SpotlightAnnotation(p, _scale, _spotlightDim),
+        _ => new PenAnnotation(p, _color, SizeOf(ToolKind.Pen), _scale),
     });
+
+    private double SizeOf(ToolKind tool) => _sizes.TryGetValue(tool, out double size) ? size : SizeRange.For(tool).Default;
+
+    /// <summary>The tool that draws this kind of annotation.</summary>
+    private static ToolKind KindOf(Annotation annotation) => annotation switch
+    {
+        RectAnnotation => ToolKind.Rectangle,
+        EllipseAnnotation => ToolKind.Ellipse,
+        ArrowAnnotation => ToolKind.Arrow,
+        LineAnnotation => ToolKind.Line,
+        HighlighterAnnotation => ToolKind.Highlighter,
+        PenAnnotation => ToolKind.Pen,
+        NumberAnnotation => ToolKind.Number,
+        TextAnnotation => ToolKind.Text,
+        MosaicAnnotation => ToolKind.Mosaic,
+        SpotlightAnnotation => ToolKind.Spotlight,
+        _ => ToolKind.None,
+    };
 
     /// <summary>Applies the current fill, dash and opacity choices where the annotation supports them.</summary>
     private Annotation ApplyShapeStyle(Annotation annotation)
@@ -908,7 +960,12 @@ internal sealed class OverlayWindow : Window
         _adorner.Target = annotation;
         _adorner.InvalidateVisual();
         // New shapes continue with the selected shape's style.
-        if (annotation is MosaicAnnotation mosaic)
+        if (annotation is SpotlightAnnotation spotlight)
+        {
+            _spotlightDim = spotlight.Dim;
+            _toolbar.SetSpotlightDim(_spotlightDim);
+        }
+        else if (annotation is MosaicAnnotation mosaic)
         {
             _mosaicStrength = mosaic.Strength;
             _mosaicBlur = mosaic.Blur;
@@ -918,8 +975,8 @@ internal sealed class OverlayWindow : Window
         else if (annotation != null)
         {
             _color = annotation.Color;
-            _size = annotation.Size;
-            _toolbar.SetStyle(_color, _size);
+            _sizes[KindOf(annotation)] = annotation.Size;
+            _toolbar.SetColor(_color);
             // Only take over the options this annotation has, so e.g. selecting an arrow keeps the fill choice.
             if (annotation.CanFill)
                 _filled = annotation.Filled;
@@ -929,16 +986,17 @@ internal sealed class OverlayWindow : Window
             _toolbar.SetShapeStyle(_filled, _dashed, _opacity);
             if (annotation is TextAnnotation text)
             {
-                _textBold = text.Bold;
-                _textBackground = text.Background;
-                _toolbar.SetTextStyle(_textBold, _textBackground);
+                _textStyle = text.Style;
+                _toolbar.SetTextStyle(_textStyle);
             }
         }
         // Without a selection, show the options of the shape the current tool would draw.
+        var kind = annotation != null ? KindOf(annotation) : _tool;
+        _toolbar.SetSize(kind, SizeOf(kind));
         var sample = annotation ?? (_tool is ToolKind.None or ToolKind.Text ? null : CreateAnnotation(default));
         bool textOptions = annotation is TextAnnotation || (annotation == null && _tool == ToolKind.Text);
         _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, sample is MosaicAnnotation, textOptions,
-            fill: sample?.CanFill == true, dash: sample?.CanDash == true);
+            fill: sample?.CanFill == true, dash: sample?.CanDash == true, spotlight: sample is SpotlightAnnotation);
     }
 
     /// <summary>Topmost annotation under the point, only within the visible selection.</summary>
@@ -1017,12 +1075,12 @@ internal sealed class OverlayWindow : Window
         Select(null);
         InvalidateAnnotations();
         _color = text.Color;
-        _size = text.Size;
-        _textBold = text.Bold;
-        _textBackground = text.Background;
+        _sizes[ToolKind.Text] = text.Size;
+        _textStyle = text.Style;
         _opacity = (int)Math.Round(text.Opacity * 100);
-        _toolbar.SetStyle(_color, _size);
-        _toolbar.SetTextStyle(_textBold, _textBackground);
+        _toolbar.SetColor(_color);
+        _toolbar.SetSize(ToolKind.Text, text.Size);
+        _toolbar.SetTextStyle(_textStyle);
         _toolbar.SetShapeStyle(_filled, _dashed, _opacity);
         _toolbar.SetOptionsVisible(true, text: true);
         BeginText(new Point(text.Position.X - 3, text.Position.Y - 1), text.Text, replacing: true);
@@ -1032,16 +1090,16 @@ internal sealed class OverlayWindow : Window
 
     private void BeginText(Point p, string text = "", bool replacing = false)
     {
-        double fontSize = TextAnnotation.FontSizeFor(_size, _scale);
+        _textSize = SizeOf(ToolKind.Text);
+        double fontSize = TextAnnotation.FontSizeFor(_textSize, _scale);
         _textPos = p;
-        _textSize = _size;
         _textReplacing = replacing;
         _textBox = new TextBox
         {
             Style = InlineTextBoxStyle, // not the themed implicit style: this box must stay transparent
             Text = text,
             FontSize = fontSize,
-            FontFamily = TextAnnotation.Font,
+            FontFamily = _textStyle.Family,
             BorderBrush = new SolidColorBrush(Color.FromArgb(0xAA, 0xFF, 0xFF, 0xFF)),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(0),
@@ -1066,10 +1124,13 @@ internal sealed class OverlayWindow : Window
     {
         if (_textBox == null)
             return;
-        var text = new SolidColorBrush(_textBackground ? TextAnnotation.ContrastColor(_color) : _color);
+        var text = new SolidColorBrush(_textStyle.Background ? TextAnnotation.ContrastColor(_color) : _color);
         _textBox.Foreground = _textBox.CaretBrush = text;
-        _textBox.Background = _textBackground ? new SolidColorBrush(_color) : Brushes.Transparent;
-        _textBox.FontWeight = _textBold ? FontWeights.Bold : FontWeights.Normal;
+        _textBox.Background = _textStyle.Background ? new SolidColorBrush(_color) : Brushes.Transparent;
+        _textBox.FontWeight = _textStyle.Bold ? FontWeights.Bold : FontWeights.Normal;
+        _textBox.FontStyle = _textStyle.Italic ? FontStyles.Italic : FontStyles.Normal;
+        _textBox.FontFamily = _textStyle.Family;
+        _textBox.TextDecorations = _textStyle.Underline ? TextDecorations.Underline : null;
         _textBox.Opacity = Math.Max(0.4, _opacity / 100.0); // keep the box itself findable
     }
 
@@ -1084,7 +1145,7 @@ internal sealed class OverlayWindow : Window
         {
             // Offset by the TextBox border and internal text margin so the text stays where it was typed.
             var position = new Point(_textPos.X + 3, _textPos.Y + 1);
-            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale, _textBold, _textBackground) { Opacity = _opacity / 100.0 };
+            var annotation = new TextAnnotation(box.Text, position, _color, _textSize, _scale) { Style = _textStyle, Opacity = _opacity / 100.0 };
             _annotations.Add(annotation, checkpoint: !_textReplacing);
             Select(annotation);
             InvalidateAnnotations();

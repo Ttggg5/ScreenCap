@@ -52,10 +52,11 @@ internal static class RecordingSession
         string temp = Path.Combine(Path.GetTempPath(), $"ScreenCap_{Guid.NewGuid():N}.{_format.ToString().ToLowerInvariant()}");
         _tempPath = temp;
         int width = region.Width, height = region.Height;
+        bool clicks = AppSettings.HighlightClicks;
         var recorder = _format == RecordingFormat.Mp4
-            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond))
+            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond), clicks)
             : new ScreenRecorder(region, GifFramesPerSecond, () => new GifEncoder(
-                new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16), width, height, ownsStream: true));
+                new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16), width, height, ownsStream: true), clicks);
         try
         {
             await recorder.StartAsync();

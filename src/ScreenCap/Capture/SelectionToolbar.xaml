@@ -1,6 +1,7 @@
 <UserControl x:Class="ScreenCap.Capture.SelectionToolbar"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ScreenCap.Capture"
              x:ClassModifier="internal"
              FontFamily="Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI"
              Cursor="Arrow">
@@ -139,13 +140,22 @@
                         </Border>
                     </ToggleButton>
                     <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克 / 模糊" Content="&#xE80A;" Click="OnToolClick" />
+                    <ToggleButton x:Name="SpotlightTool" Style="{StaticResource ToolToggle}" ToolTip="聚光燈：框選的範圍以外調暗" Click="OnToolClick">
+                        <Grid Width="18" Height="16">
+                            <Rectangle RadiusX="2" RadiusY="2" Opacity="0.45"
+                                       Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                            <Rectangle Width="9" Height="7" RadiusX="1" RadiusY="1" Fill="{DynamicResource Brush.Toolbar}" />
+                            <Rectangle Width="9" Height="7" RadiusX="1" RadiusY="1" StrokeThickness="1.2"
+                                       Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        </Grid>
+                    </ToggleButton>
                     <Rectangle Style="{StaticResource Divider}" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
                     <Rectangle Style="{StaticResource Divider}" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="文字辨識 (OCR)" Content="&#xE8AC;" Click="OnOcr" />
-                    <Button Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
-                    <Button Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
+                    <Button x:Name="PinButton" Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
+                    <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
                     <Button x:Name="ScrollCaptureButton" Style="{StaticResource ToolButton}" ToolTip="長截圖：自動捲動並拼接" Content="&#xECE7;" Click="OnScrollCapture" />
                 </StackPanel>
                 <StackPanel x:Name="FormatOptions" Orientation="Horizontal" Visibility="Collapsed">
@@ -171,24 +181,28 @@
                     <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
                     <TextBlock Text="強度" Style="{StaticResource Label}" Margin="4,0,10,0" />
                     <Slider x:Name="MosaicSlider" Width="150" Minimum="1" Maximum="10" TickFrequency="1"
-                            IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center"
-                            PreviewMouseLeftButtonDown="OnMosaicSliderPressed" ValueChanged="OnMosaicSliderChanged" />
-                    <TextBlock x:Name="MosaicValue" Width="22" Style="{StaticResource Label}" TextAlignment="Right"
-                               Margin="4,0,8,0" FontFamily="Consolas" />
+                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnMosaicSliderChanged" />
+                    <local:NumberBox x:Name="MosaicValue" Minimum="1" Maximum="10" Margin="6,0,6,0" />
+                </StackPanel>
+                <StackPanel x:Name="SpotlightOptions" Orientation="Horizontal" Visibility="Collapsed" Height="26">
+                    <TextBlock Text="其餘部分調暗" Style="{StaticResource Label}" Margin="4,0,10,0" />
+                    <Slider x:Name="DimSlider" Width="150" Minimum="10" Maximum="90" SmallChange="5" LargeChange="10" TickFrequency="5"
+                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnDimSliderChanged" />
+                    <local:NumberBox x:Name="DimValue" Minimum="10" Maximum="90" Suffix="%" Margin="6,0,6,0" />
                 </StackPanel>
                 <StackPanel x:Name="StrokeOptions" Orientation="Horizontal">
-                    <ToggleButton x:Name="SizeSmall" Style="{StaticResource SizeDot}" Tag="2" ToolTip="細" Click="OnSizeClick">
-                        <Ellipse Width="4" Height="4" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
-                    </ToggleButton>
-                    <ToggleButton x:Name="SizeMedium" Style="{StaticResource SizeDot}" Tag="4" ToolTip="中" Click="OnSizeClick">
-                        <Ellipse Width="8" Height="8" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
-                    </ToggleButton>
-                    <ToggleButton x:Name="SizeLarge" Style="{StaticResource SizeDot}" Tag="6" ToolTip="粗" Click="OnSizeClick">
-                        <Ellipse Width="12" Height="12" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
-                    </ToggleButton>
+                    <TextBlock x:Name="SizeLabel" Text="粗細" Style="{StaticResource Label}" Margin="4,0,6,0" />
+                    <Slider x:Name="SizeSlider" Width="110" Minimum="1" Maximum="20" SmallChange="1" LargeChange="2" TickFrequency="1"
+                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnSizeSliderChanged" />
+                    <local:NumberBox x:Name="SizeValue" Margin="6,0,2,0" />
                     <StackPanel x:Name="TextOptions" Orientation="Horizontal" Visibility="Collapsed">
                         <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
-                        <ToggleButton x:Name="BoldToggle" Style="{StaticResource SizeDot}" ToolTip="粗體" Content="&#xE8DD;" FontSize="14" Click="OnTextStyleClick" />
+                        <ComboBox x:Name="FontBox" Width="150" Height="26" Focusable="False" VerticalAlignment="Center" FontSize="12" ToolTip="字型"
+                                  VirtualizingPanel.IsVirtualizing="True" MaxDropDownHeight="360"
+                                  DropDownOpened="OnFontDropDownOpened" SelectionChanged="OnFontChanged" />
+                        <ToggleButton x:Name="BoldToggle" Style="{StaticResource SizeDot}" ToolTip="粗體" Content="&#xE8DD;" FontSize="14" Margin="4,0,0,0" Click="OnTextStyleClick" />
+                        <ToggleButton x:Name="ItalicToggle" Style="{StaticResource SizeDot}" ToolTip="斜體" Content="&#xE8DB;" FontSize="14" Click="OnTextStyleClick" />
+                        <ToggleButton x:Name="UnderlineToggle" Style="{StaticResource SizeDot}" ToolTip="底線" Content="&#xE8DC;" FontSize="14" Click="OnTextStyleClick" />
                         <ToggleButton x:Name="BackgroundToggle" Style="{StaticResource SizeDot}" ToolTip="文字底色" Click="OnTextStyleClick">
                             <Border CornerRadius="3" Padding="3,0,3,1"
                                     Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}">
@@ -231,10 +245,8 @@
                         <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
                         <TextBlock Text="不透明度" Style="{StaticResource Label}" Margin="2,0,6,0" />
                         <Slider x:Name="OpacitySlider" Width="80" Minimum="10" Maximum="100" SmallChange="10" LargeChange="10" TickFrequency="10"
-                                IsSnapToTickEnabled="True" Focusable="False" VerticalAlignment="Center" Value="100"
-                                PreviewMouseLeftButtonDown="OnOpacitySliderPressed" ValueChanged="OnOpacitySliderChanged" />
-                        <TextBlock x:Name="OpacityValue" Width="34" Style="{StaticResource Label}" TextAlignment="Right"
-                                   Margin="2,0,4,0" FontFamily="Consolas" Text="100%" />
+                                IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" Value="100" ValueChanged="OnOpacitySliderChanged" />
+                        <local:NumberBox x:Name="OpacityValue" Minimum="10" Maximum="100" Suffix="%" Margin="6,0,4,0" Value="100" />
                     </StackPanel>
                 </StackPanel>
             </StackPanel>

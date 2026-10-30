@@ -66,7 +66,7 @@ public class ConstrainedDrawingTests
     [Fact]
     public void Highlighter_WithShift_IsStraightToo() => Sta.Run(() =>
     {
-        var highlighter = new HighlighterAnnotation(new Point(0, 20), Red, 4, 1);
+        var highlighter = new HighlighterAnnotation(new Point(0, 20), Red, 16, 1);
         highlighter.Update(new Point(50, 30));
         highlighter.Update(new Point(200, 24), constrain: true);
         Assert.Equal(16, highlighter.Bounds.Height, 3);

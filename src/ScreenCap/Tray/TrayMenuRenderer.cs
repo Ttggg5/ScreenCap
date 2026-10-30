@@ -41,9 +41,53 @@ internal sealed class TrayMenuRenderer(bool dark) : Forms.ToolStripRenderer
     protected override void OnRenderItemText(Forms.ToolStripItemTextRenderEventArgs e)
     {
         e.TextColor = e.Item.Enabled ? _text : _disabled;
+        // Center over the whole item, then by the glyphs rather than the line box: WinForms places the text
+        // rectangle at the top padding, and Microsoft JhengHei UI's glyphs sit high in their line.
+        var font = e.TextFont ?? e.Item.Font;
+        int height = e.Item.Height;
+        var r = e.TextRectangle;
+        e.TextFormat = (e.TextFormat & ~(Forms.TextFormatFlags.Top | Forms.TextFormatFlags.Bottom)) | Forms.TextFormatFlags.VerticalCenter;
+        e.TextRectangle = new Rectangle(r.X, InkOffset(e.Graphics, font, height), r.Width, height);
         base.OnRenderItemText(e);
     }
 
+    private static readonly Dictionary<(string, float, float, int), int> InkOffsets = new();
+
+    /// <summary>How far to move vertically centered text down so its glyphs end up centered in <paramref name="height"/>.</summary>
+    private static int InkOffset(Graphics g, Font font, int height)
+    {
+        var key = (font.Name, font.Size, g.DpiY, height);
+        if (InkOffsets.TryGetValue(key, out int offset))
+            return offset;
+
+        const string sample = "截圖設定錄製";
+        var size = Forms.TextRenderer.MeasureText(g, sample, font);
+        using var bitmap = new Bitmap(Math.Max(1, size.Width), Math.Max(1, height));
+        bitmap.SetResolution(g.DpiX, g.DpiY);
+        using (var bg = Graphics.FromImage(bitmap))
+        {
+            bg.Clear(Color.White);
+            Forms.TextRenderer.DrawText(bg, sample, font, new Rectangle(0, 0, bitmap.Width, height), Color.Black,
+                Forms.TextFormatFlags.VerticalCenter | Forms.TextFormatFlags.SingleLine);
+        }
+        int top = -1, bottom = -1;
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                if (bitmap.GetPixel(x, y).R < 128)
+                {
+                    if (top < 0)
+                        top = y;
+                    bottom = y;
+                    break;
+                }
+            }
+        }
+        offset = top < 0 ? 0 : (int)Math.Round(height / 2.0 - (top + bottom + 1) / 2.0);
+        InkOffsets[key] = offset;
+        return offset;
+    }
     protected override void OnRenderItemCheck(Forms.ToolStripItemImageRenderEventArgs e)
     {
         // A check glyph in the accent color instead of the boxed default.

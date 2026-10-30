@@ -27,6 +27,7 @@ internal sealed class ScreenRecorder
     private readonly Int32Rect _region; // physical screen pixels
     private readonly int _fps;
     private readonly Func<IFrameEncoder> _createEncoder;
+    private readonly bool _highlightClicks;
     private readonly BlockingCollection<(byte[] Pixels, TimeSpan Time)> _frames;
     private readonly ManualResetEventSlim _stopSignal = new();
     private readonly ManualResetEventSlim _running = new(true); // reset while paused
@@ -38,11 +39,13 @@ internal sealed class ScreenRecorder
     private TimeSpan _endTime;
 
     /// <param name="createEncoder">Called on the encoding thread, which also uses and disposes the encoder.</param>
-    public ScreenRecorder(Int32Rect region, int fps, Func<IFrameEncoder> createEncoder)
+    /// <param name="highlightClicks">Draw a ring around the cursor when a mouse button is pressed.</param>
+    public ScreenRecorder(Int32Rect region, int fps, Func<IFrameEncoder> createEncoder, bool highlightClicks = false)
     {
         _region = region;
         _fps = fps;
         _createEncoder = createEncoder;
+        _highlightClicks = highlightClicks;
         long frameBytes = (long)region.Width * region.Height * 4;
         _frames = new(boundedCapacity: (int)Math.Clamp(MaxQueuedBytes / frameBytes, 4, 60));
     }
@@ -101,7 +104,7 @@ internal sealed class ScreenRecorder
     {
         try
         {
-            using var grabber = new RegionGrabber(_region);
+            using var grabber = new RegionGrabber(_region, _highlightClicks);
             double interval = 1000.0 / _fps;
             for (long frame = 0; ;)
             {
@@ -163,10 +166,17 @@ internal sealed class ScreenRecorder
         private readonly Int32Rect _r;
         private readonly IntPtr _screenDc, _memDc, _bitmap, _oldBitmap;
         private BITMAPINFOHEADER _header;
+        private readonly ClickPainter? _clicks;
 
-        public RegionGrabber(Int32Rect region)
+        public RegionGrabber(Int32Rect region, bool highlightClicks)
         {
             _r = region;
+            if (highlightClicks)
+            {
+                var center = new POINT { X = region.X + region.Width / 2, Y = region.Y + region.Height / 2 };
+                double scale = GetDpiForMonitor(MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST), MDT_EFFECTIVE_DPI, out uint dpi, out _) == 0 ? dpi / 96.0 : 1;
+                _clicks = new ClickPainter(scale);
+            }
             _screenDc = GetDC(IntPtr.Zero);
             _memDc = CreateCompatibleDC(_screenDc);
             _bitmap = CreateCompatibleBitmap(_screenDc, region.Width, region.Height);
@@ -185,6 +195,7 @@ internal sealed class ScreenRecorder
         {
             // No CAPTUREBLT here: it makes the cursor flicker when capturing repeatedly.
             BitBlt(_memDc, 0, 0, _r.Width, _r.Height, _screenDc, _r.X, _r.Y, SRCCOPY);
+            _clicks?.Draw(_memDc, _r.X, _r.Y); // under the cursor
             CursorPainter.Draw(_memDc, _r.X, _r.Y);
 
             var pixels = new byte[_r.Width * _r.Height * 4];
@@ -196,6 +207,7 @@ internal sealed class ScreenRecorder
 
         public void Dispose()
         {
+            _clicks?.Dispose();
             SelectObject(_memDc, _oldBitmap);
             DeleteObject(_bitmap);
             DeleteDC(_memDc);

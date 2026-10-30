@@ -332,8 +332,8 @@ internal sealed class HighlighterAnnotation(Point start, Color color, double siz
 {
     public override bool CanDash => false;
 
-    // Size levels 2/4/6 → 8/16/24 DIP wide.
-    protected override double Thickness => Size * 4 * Scale;
+    // Size is the full stroke width, like the pen.
+    protected override double Thickness => Size * Scale;
 
     protected override Color StrokeColor => Color.FromArgb(0x70, Color.R, Color.G, Color.B);
 }
@@ -345,8 +345,8 @@ internal sealed class NumberAnnotation(Point center, int number, Color color, do
     public int Number { get; } = number;
     public Point Center { get; private set; } = center;
 
-    // Size levels 2/4/6 → 12/16/20 DIP radius.
-    private double Radius => (8 + Size * 2) * Scale;
+    // Size is the circle's diameter in DIPs.
+    private double Radius => Size / 2 * Scale;
 
     public override Rect Bounds => new(Center.X - Radius, Center.Y - Radius, 2 * Radius, 2 * Radius);
 
@@ -366,13 +366,33 @@ internal sealed class NumberAnnotation(Point center, int number, Color color, do
     }
 }
 
+/// <summary>Text options chosen in the toolbar.</summary>
+internal readonly record struct TextStyle(bool Bold, bool Background, bool Italic, bool Underline, string FontName)
+{
+    public const string DefaultFontName = "Microsoft JhengHei UI";
+
+    public static readonly TextStyle Default = new(false, false, false, false, DefaultFontName);
+
+    /// <summary>The chosen font, falling back to the default for characters it lacks (e.g. CJK in a Latin font).</summary>
+    public FontFamily Family => FamilyFor(FontName);
+
+    private static readonly Dictionary<string, FontFamily> Families = new();
+
+    public static FontFamily FamilyFor(string name)
+    {
+        if (!Families.TryGetValue(name, out var family))
+            Families[name] = family = new FontFamily($"{name}, {DefaultFontName}, Segoe UI");
+        return family;
+    }
+}
+
 internal sealed class TextAnnotation(string text, Point position, Color color, double size, double scale, bool bold = false, bool background = false)
     : Annotation(color, size, scale)
 {
     public static readonly FontFamily Font = new("Microsoft JhengHei UI, Segoe UI");
 
-    /// <summary>Maps a toolbar size level (2/4/6) to a font size in physical pixels.</summary>
-    public static double FontSizeFor(double size, double scale) => (12 + size * 2) * scale;
+    /// <summary>Maps the toolbar size (font size in DIPs) to a font size in physical pixels.</summary>
+    public static double FontSizeFor(double size, double scale) => size * scale;
 
     /// <summary>Black or white, whichever reads better on <paramref name="c"/>.</summary>
     public static Color ContrastColor(Color c) => 0.299 * c.R + 0.587 * c.G + 0.114 * c.B > 160 ? Colors.Black : Colors.White;
@@ -386,6 +406,16 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
 
     /// <summary>Draws the text in a contrasting color on a box filled with <see cref="Annotation.Color"/>.</summary>
     public bool Background { get; set; } = background;
+
+    public bool Italic { get; set; }
+    public bool Underline { get; set; }
+    public string FontName { get; set; } = TextStyle.DefaultFontName;
+
+    public TextStyle Style
+    {
+        get => new(Bold, Background, Italic, Underline, FontName);
+        set => (Bold, Background, Italic, Underline, FontName) = (value.Bold, value.Background, value.Italic, value.Underline, value.FontName);
+    }
 
     private Rect TextRect
     {
@@ -427,9 +457,49 @@ internal sealed class TextAnnotation(string text, Point position, Color color, d
             dc.DrawText(Format(Color), Position);
     }
 
-    private FormattedText Format(Color foreground) => new(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-        new Typeface(Font, FontStyles.Normal, Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal),
-        FontSizeFor(Size, Scale), new SolidColorBrush(foreground), 1.0);
+    private FormattedText Format(Color foreground)
+    {
+        var text = new FormattedText(Text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            new Typeface(TextStyle.FamilyFor(FontName), Italic ? FontStyles.Italic : FontStyles.Normal, Bold ? FontWeights.Bold : FontWeights.Normal, FontStretches.Normal),
+            FontSizeFor(Size, Scale), new SolidColorBrush(foreground), 1.0);
+        if (Underline)
+            text.SetTextDecorations(TextDecorations.Underline);
+        return text;
+    }
+}
+
+/// <summary>
+/// Keeps the dragged area as it is and dims everything else, to draw attention to it. Several spotlights
+/// share one dimmed layer, drawn by <see cref="DrawMask"/>, so their areas all stay bright.
+/// </summary>
+internal sealed class SpotlightAnnotation(Point start, double scale, int dim = SpotlightAnnotation.DefaultDim)
+    : DragAnnotation(start, Colors.Black, 0, scale)
+{
+    public const int DefaultDim = 60;
+
+    /// <summary>How much the rest is darkened, 10–90 %. The overlay keeps all spotlights at the same level.</summary>
+    public int Dim { get; set; } = Math.Clamp(dim, 10, 90);
+
+    public override bool HasOpacity => false;
+
+    public override bool HitTest(Point point, double tolerance) => Bounds.Contains(point);
+
+    // Drawn as part of the shared mask instead.
+    protected override void Render(DrawingContext dc) { }
+
+    /// <summary>Dims <paramref name="area"/> except the spotlights among <paramref name="annotations"/>.</summary>
+    public static void DrawMask(DrawingContext dc, IEnumerable<Annotation?> annotations, Rect area)
+    {
+        Geometry mask = new RectangleGeometry(area);
+        SpotlightAnnotation? last = null;
+        foreach (var spotlight in annotations.OfType<SpotlightAnnotation>())
+        {
+            mask = new CombinedGeometry(GeometryCombineMode.Exclude, mask, new RectangleGeometry(spotlight.Bounds));
+            last = spotlight;
+        }
+        if (last != null)
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb((byte)Math.Round(last.Dim * 2.55), 0, 0, 0)), null, mask);
+    }
 }
 
 /// <summary>

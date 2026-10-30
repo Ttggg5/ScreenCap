@@ -16,7 +16,19 @@ namespace ScreenCap.Pin;
 internal sealed class PinWindow : Window
 {
     private const double ShadowMargin = 10; // DIP around the image for the drop shadow
+    private const int MaxClosed = 20;
     private static readonly List<PinWindow> OpenPins = new();
+
+    /// <summary>Recently closed pins, newest last, so they can be brought back.</summary>
+    private static readonly List<ClosedPin> ClosedPins = new();
+
+    private sealed record ClosedPin(BitmapSource Image, int ScreenX, int ScreenY, double Zoom, double Opacity, string? Title);
+
+    /// <summary>All pins are temporarily hidden (from the tray menu).</summary>
+    public static bool AreHidden { get; private set; }
+
+    public static bool HasOpenPins => OpenPins.Count > 0;
+    public static bool CanRestore => ClosedPins.Count > 0;
 
     private BitmapSource _image;
     private readonly string? _title; // of the captured window, for file names
@@ -69,13 +81,52 @@ internal sealed class PinWindow : Window
     }
 
     /// <param name="title">Title of the window the image came from, used when saving.</param>
-    public static void ShowAt(BitmapSource image, int screenX, int screenY, string? title = null)
+    public static void ShowAt(BitmapSource image, int screenX, int screenY, string? title = null) =>
+        Open(new PinWindow(image, screenX, screenY, title));
+
+    private static void Open(PinWindow pin)
     {
-        var pin = new PinWindow(image, screenX, screenY, title);
+        if (AreHidden)
+            SetHidden(false); // a new pin should be seen, along with the others
         OpenPins.Add(pin);
+        pin.Closing += (_, _) => pin.Remember();
         pin.Closed += (_, _) => OpenPins.Remove(pin);
         pin.Show();
         pin.Activate();
+    }
+
+    /// <summary>Hides or shows every pin without closing them.</summary>
+    public static void SetHidden(bool hidden)
+    {
+        AreHidden = hidden;
+        foreach (var pin in OpenPins.Where(p => !p._editing))
+        {
+            if (hidden)
+                pin.Hide();
+            else
+                pin.Show();
+        }
+    }
+
+    /// <summary>Reopens the most recently closed pin where it was, at the same zoom and opacity.</summary>
+    public static void RestoreLast()
+    {
+        if (ClosedPins.Count == 0)
+            return;
+        var closed = ClosedPins[^1];
+        ClosedPins.RemoveAt(ClosedPins.Count - 1);
+        var pin = new PinWindow(closed.Image, closed.ScreenX, closed.ScreenY, closed.Title) { _zoom = closed.Zoom, Opacity = closed.Opacity };
+        Open(pin);
+    }
+
+    private void Remember()
+    {
+        if (new WindowInteropHelper(this).Handle == IntPtr.Zero)
+            return;
+        GetWindowRect(Handle, out var rect);
+        ClosedPins.Add(new ClosedPin(_image, rect.Left + Inset, rect.Top + Inset, _zoom, Opacity, _title));
+        if (ClosedPins.Count > MaxClosed)
+            ClosedPins.RemoveAt(0);
     }
 
     public static void CloseAll()

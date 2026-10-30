@@ -3,6 +3,8 @@ using System.Globalization;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
+using ScreenCap.Annotations;
+using ScreenCap.Capture;
 using ScreenCap.Recording;
 using ScreenCap.Theme;
 
@@ -113,6 +115,43 @@ internal static class AppSettings
     {
         get => Get("FileNamePattern") is { Length: > 0 } pattern ? pattern : FileNameTemplate.Default;
         set => Set("FileNamePattern", value);
+    }
+
+    /// <summary>After saving an image, put its path on the clipboard.</summary>
+    public static bool CopyPathAfterSave
+    {
+        get => Get("CopyPathAfterSave") == "1";
+        set => Set("CopyPathAfterSave", value ? "1" : "0");
+    }
+
+    /// <summary>After saving, select the file in Explorer.</summary>
+    public static bool RevealAfterSave
+    {
+        get => Get("RevealAfterSave") == "1";
+        set => Set("RevealAfterSave", value ? "1" : "0");
+    }
+
+    public static readonly OverlayAction[] ConfirmActions = [OverlayAction.Copy, OverlayAction.QuickSave, OverlayAction.Save, OverlayAction.Pin];
+
+    /// <summary>What Enter and double-clicking the selection do.</summary>
+    public static OverlayAction ConfirmAction
+    {
+        get => Enum.TryParse(Get("ConfirmAction"), out OverlayAction action) && ConfirmActions.Contains(action) ? action : OverlayAction.Copy;
+        set => Set("ConfirmAction", value.ToString());
+    }
+
+    /// <summary>Mark mouse clicks with a ring in recordings.</summary>
+    public static bool HighlightClicks
+    {
+        get => Get("HighlightClicks") == "1";
+        set => Set("HighlightClicks", value ? "1" : "0");
+    }
+
+    /// <summary>Font for text annotations; remembered from the last one chosen.</summary>
+    public static string TextFont
+    {
+        get => Get("TextFont") is { Length: > 0 } font ? font : TextStyle.DefaultFontName;
+        set => Set("TextFont", value);
     }
 
     /// <summary>Draw the mouse cursor into screenshots.</summary>

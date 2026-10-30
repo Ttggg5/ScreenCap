@@ -10,6 +10,8 @@ internal sealed class AnnotationLayer(IReadOnlyList<Annotation> annotations) : F
 
     protected override void OnRender(DrawingContext dc)
     {
+        // The spotlight mask goes under the other annotations so they stay vivid.
+        SpotlightAnnotation.DrawMask(dc, annotations.Append(Current), new Rect(RenderSize));
         foreach (var annotation in annotations)
             annotation.Draw(dc);
         Current?.Draw(dc);

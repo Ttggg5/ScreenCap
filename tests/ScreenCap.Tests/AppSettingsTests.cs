@@ -56,6 +56,35 @@ public class AppSettingsTests : IDisposable
     }
 
     [Fact]
+    public void SaveAndCaptureOptions_RoundTrip()
+    {
+        Assert.Equal(Capture.OverlayAction.Copy, AppSettings.ConfirmAction);
+        Assert.Equal(FileNameTemplate.Default, AppSettings.FileNamePattern);
+        Assert.Equal(Annotations.TextStyle.DefaultFontName, AppSettings.TextFont);
+
+        AppSettings.ConfirmAction = Capture.OverlayAction.QuickSave;
+        AppSettings.CopyPathAfterSave = true;
+        AppSettings.RevealAfterSave = true;
+        AppSettings.HighlightClicks = true;
+        AppSettings.TextFont = "Consolas";
+        AppSettings.FileNamePattern = "{title}_{n}";
+
+        Assert.Equal(Capture.OverlayAction.QuickSave, AppSettings.ConfirmAction);
+        Assert.True(AppSettings.CopyPathAfterSave);
+        Assert.True(AppSettings.RevealAfterSave);
+        Assert.True(AppSettings.HighlightClicks);
+        Assert.Equal("Consolas", AppSettings.TextFont);
+        Assert.Equal("{title}_{n}", AppSettings.FileNamePattern);
+    }
+
+    [Fact]
+    public void ConfirmAction_IgnoresActionsThatCannotBeTheDefault()
+    {
+        AppSettings.ConfirmAction = Capture.OverlayAction.Record;
+        Assert.Equal(Capture.OverlayAction.Copy, AppSettings.ConfirmAction);
+    }
+
+    [Fact]
     public void SaveFolder_FallsBackWhenFolderNoLongerExists()
     {
         AppSettings.SaveFolder = Path.Combine(Path.GetTempPath(), "ScreenCap_missing_" + Guid.NewGuid());

@@ -142,6 +142,17 @@ internal static class NativeMethods
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, int data, IntPtr extraInfo);
 
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vk);
+    [DllImport("gdi32.dll")] public static extern IntPtr CreatePen(int style, int width, uint color);
+    [DllImport("gdi32.dll")] public static extern IntPtr GetStockObject(int obj);
+    [DllImport("gdi32.dll")] public static extern bool Ellipse(IntPtr hdc, int left, int top, int right, int bottom);
+
+    public const int VK_LBUTTON = 0x01;
+    public const int VK_RBUTTON = 0x02;
+    public const int SM_SWAPBUTTON = 23;
+    public const int PS_SOLID = 0;
+    public const int NULL_BRUSH = 5;
+
     public const uint MOUSEEVENTF_WHEEL = 0x0800;
     public const int WHEEL_DELTA = 120;
 

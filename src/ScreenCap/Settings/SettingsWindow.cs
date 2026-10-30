@@ -21,6 +21,10 @@ internal sealed class SettingsWindow : Window
     private readonly CheckBox _startup = new() { Content = "登入 Windows 時自動啟動 ScreenCap", IsChecked = StartupService.IsEnabled, Margin = new Thickness(0, 4, 0, 0) };
     private readonly ComboBox _theme = new();
     private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly CheckBox _clicks = new() { Content = "錄影時標示滑鼠點擊", IsChecked = AppSettings.HighlightClicks, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly CheckBox _copyPath = new() { Content = "存檔後複製檔案路徑", IsChecked = AppSettings.CopyPathAfterSave, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly CheckBox _reveal = new() { Content = "存檔後在檔案總管中顯示檔案", IsChecked = AppSettings.RevealAfterSave, Margin = new Thickness(0, 6, 0, 0) };
+    private readonly ComboBox _confirm = new();
 
     public SettingsWindow()
     {
@@ -37,6 +41,9 @@ internal sealed class SettingsWindow : Window
         foreach (var (mode, name) in new[] { (AppTheme.System, "跟隨 Windows 設定"), (AppTheme.Light, "淺色"), (AppTheme.Dark, "深色") })
             _theme.Items.Add(new ComboBoxItem { Content = name, Tag = mode });
         _theme.SelectedIndex = (int)AppSettings.Theme;
+        foreach (var action in AppSettings.ConfirmActions)
+            _confirm.Items.Add(new ComboBoxItem { Content = ConfirmName(action), Tag = action });
+        _confirm.SelectedIndex = Array.IndexOf(AppSettings.ConfirmActions, AppSettings.ConfirmAction);
 
         var body = new StackPanel { Margin = new Thickness(24, 16, 24, 20) };
 
@@ -60,11 +67,17 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(_patternPreview);
         _pattern.TextChanged += (_, _) => UpdatePatternPreview();
         UpdatePatternPreview();
+        body.Children.Add(_copyPath);
+        body.Children.Add(_reveal);
+
+        body.Children.Add(Heading("截圖"));
+        body.Children.Add(Row("Enter / 雙擊選區", _confirm));
 
         body.Children.Add(Heading("一般"));
         body.Children.Add(Row("外觀", _theme));
         body.Children.Add(_startup);
         body.Children.Add(_cursor);
+        body.Children.Add(_clicks);
 
         var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
@@ -110,6 +123,14 @@ internal sealed class SettingsWindow : Window
         return grid;
     }
 
+    private static string ConfirmName(Capture.OverlayAction action) => action switch
+    {
+        Capture.OverlayAction.QuickSave => "快速存檔",
+        Capture.OverlayAction.Save => "另存新檔",
+        Capture.OverlayAction.Pin => "貼到桌面",
+        _ => "複製到剪貼簿",
+    };
+
     private string Pattern => string.IsNullOrWhiteSpace(_pattern.Text) ? FileNameTemplate.Default : _pattern.Text.Trim();
 
     private void UpdatePatternPreview() =>
@@ -131,6 +152,10 @@ internal sealed class SettingsWindow : Window
         _pattern.Text = FileNameTemplate.Default;
         _theme.SelectedIndex = (int)AppTheme.System;
         _cursor.IsChecked = false;
+        _clicks.IsChecked = false;
+        _copyPath.IsChecked = false;
+        _reveal.IsChecked = false;
+        _confirm.SelectedIndex = 0;
     }
 
     private void Apply()
@@ -148,6 +173,10 @@ internal sealed class SettingsWindow : Window
         AppSettings.SaveFolder = _folder.Text;
         AppSettings.FileNamePattern = Pattern;
         AppSettings.CaptureCursor = _cursor.IsChecked == true;
+        AppSettings.HighlightClicks = _clicks.IsChecked == true;
+        AppSettings.CopyPathAfterSave = _copyPath.IsChecked == true;
+        AppSettings.RevealAfterSave = _reveal.IsChecked == true;
+        AppSettings.ConfirmAction = (Capture.OverlayAction)((ComboBoxItem)_confirm.SelectedItem).Tag;
         var theme = (AppTheme)((ComboBoxItem)_theme.SelectedItem).Tag;
         if (theme != AppSettings.Theme)
         {

@@ -1,5 +1,6 @@
 using System.Drawing;
 using ScreenCap.Help;
+using ScreenCap.Pin;
 using ScreenCap.Recording;
 using ScreenCap.Services;
 using ScreenCap.Theme;
@@ -86,6 +87,18 @@ internal sealed class TrayIconHost : IDisposable
         menu.Items.Add(record);
         menu.Items.Add(pause);
         menu.Items.Add(pin);
+        var hidePins = new Forms.ToolStripMenuItem();
+        hidePins.Click += (_, _) => PinWindow.SetHidden(!PinWindow.AreHidden);
+        var restorePin = new Forms.ToolStripMenuItem("還原上次關閉的貼圖");
+        restorePin.Click += (_, _) => PinWindow.RestoreLast();
+        menu.Opening += (_, _) =>
+        {
+            hidePins.Text = PinWindow.AreHidden ? "顯示所有貼圖" : "隱藏所有貼圖";
+            hidePins.Enabled = PinWindow.HasOpenPins;
+            restorePin.Enabled = PinWindow.CanRestore;
+        };
+        menu.Items.Add(hidePins);
+        menu.Items.Add(restorePin);
         menu.Items.Add("關閉所有貼圖", null, (_, _) => actions.CloseAllPins());
         menu.Items.Add("解除所有貼圖的滑鼠穿透", null, (_, _) => actions.ReleasePins());
         menu.Items.Add(new Forms.ToolStripSeparator());

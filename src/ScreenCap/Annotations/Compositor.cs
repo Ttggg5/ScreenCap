@@ -21,6 +21,7 @@ internal static class Compositor
             dc.DrawImage(cropped, new Rect(0, 0, w, h));
             dc.PushClip(new RectangleGeometry(new Rect(0, 0, w, h)));
             dc.PushTransform(new TranslateTransform(-selection.X, -selection.Y));
+            SpotlightAnnotation.DrawMask(dc, annotations, selection);
             foreach (var annotation in annotations)
                 annotation.Draw(dc);
             dc.Pop();

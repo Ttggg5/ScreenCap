@@ -37,7 +37,7 @@ public class CompositorTests
     public void Highlighter_IsTranslucent() => Sta.Run(() =>
     {
         var snapshot = Images.Snapshot(100, 50, Colors.White);
-        var highlighter = new HighlighterAnnotation(new Point(10, 25), Color.FromRgb(0xFD, 0xD8, 0x35), 4, 1);
+        var highlighter = new HighlighterAnnotation(new Point(10, 25), Color.FromRgb(0xFD, 0xD8, 0x35), 16, 1);
         highlighter.Update(new Point(90, 25));
 
         var pixel = Images.PixelAt(Compositor.Compose(snapshot, new Rect(0, 0, 100, 50), [highlighter]), 50, 25);
@@ -49,8 +49,8 @@ public class CompositorTests
     public void Number_DrawsFilledCircle_AndTextBackground_FillsTheBox() => Sta.Run(() =>
     {
         var snapshot = Images.Snapshot(200, 100, Colors.White);
-        var number = new NumberAnnotation(new Point(30, 30), 1, Colors.Blue, 4, 1);
-        var text = new TextAnnotation("Hi", new Point(120, 40), Colors.Blue, 4, 1, background: true);
+        var number = new NumberAnnotation(new Point(30, 30), 1, Colors.Blue, 32, 1);
+        var text = new TextAnnotation("Hi", new Point(120, 40), Colors.Blue, 20, 1, background: true);
 
         var image = Compositor.Compose(snapshot, new Rect(0, 0, 200, 100), [number, text]);
         Assert.Equal(Colors.Blue, Images.PixelAt(image, 22, 22)); // inside the circle, off the digit

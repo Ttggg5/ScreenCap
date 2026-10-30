@@ -67,7 +67,7 @@ public class ShapeStyleTests
         Assert.False(new ArrowAnnotation(default, Blue, 4, 1).CanFill);
         Assert.True(new ArrowAnnotation(default, Blue, 4, 1).CanDash);
         Assert.True(new PenAnnotation(default, Blue, 4, 1).CanDash);
-        Assert.False(new HighlighterAnnotation(default, Blue, 4, 1).CanDash);
+        Assert.False(new HighlighterAnnotation(default, Blue, 16, 1).CanDash);
         Assert.False(new MosaicAnnotation(default, snapshot, 4, 1).HasOpacity);
     }
 

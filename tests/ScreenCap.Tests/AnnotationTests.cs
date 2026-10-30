@@ -79,7 +79,7 @@ public class AnnotationTests
     public void Highlighter_IsWiderThanPen_AndKeepsTypeWhenCloned() => Sta.Run(() =>
     {
         var pen = Drawn(new PenAnnotation(new Point(0, 50), Red, 4, 1), new Point(100, 50));
-        var highlighter = Drawn(new HighlighterAnnotation(new Point(0, 50), Red, 4, 1), new Point(100, 50));
+        var highlighter = Drawn(new HighlighterAnnotation(new Point(0, 50), Red, 16, 1), new Point(100, 50));
         Assert.Equal(4, pen.Bounds.Height, 3);
         Assert.Equal(16, highlighter.Bounds.Height, 3);
         Assert.IsType<HighlighterAnnotation>(highlighter.Clone());
@@ -88,8 +88,8 @@ public class AnnotationTests
     [Fact]
     public void Number_IsCircleAroundCenter_AndUpdateMovesIt() => Sta.Run(() =>
     {
-        var number = new NumberAnnotation(new Point(50, 50), 3, Red, 4, 1);
-        Assert.Equal(new Rect(34, 34, 32, 32), number.Bounds); // radius 16 at size 4
+        var number = new NumberAnnotation(new Point(50, 50), 3, Red, 32, 1);
+        Assert.Equal(new Rect(34, 34, 32, 32), number.Bounds); // size is the diameter
         Assert.True(number.HitTest(new Point(60, 50), 0));
         Assert.False(number.HitTest(new Point(80, 50), 0));
         number.Update(new Point(100, 100));
@@ -100,8 +100,8 @@ public class AnnotationTests
     [Fact]
     public void TextBackground_AddsPaddingToBounds() => Sta.Run(() =>
     {
-        var plain = new TextAnnotation("Hello", new Point(10, 10), Red, 4, 1);
-        var boxed = new TextAnnotation("Hello", new Point(10, 10), Red, 4, 1, background: true);
+        var plain = new TextAnnotation("Hello", new Point(10, 10), Red, 20, 1);
+        var boxed = new TextAnnotation("Hello", new Point(10, 10), Red, 20, 1, background: true);
         Assert.Equal(plain.Bounds.Width + 2 * TextAnnotation.BackgroundPadding, boxed.Bounds.Width, 3);
         Assert.True(boxed.HitTest(new Point(boxed.Bounds.Left + 1, boxed.Bounds.Top + 1), 0));
     });
@@ -109,8 +109,8 @@ public class AnnotationTests
     [Fact]
     public void TextBold_IsWiderThanNormal() => Sta.Run(() =>
     {
-        var normal = new TextAnnotation("Wide text", new Point(0, 0), Red, 4, 1);
-        var bold = new TextAnnotation("Wide text", new Point(0, 0), Red, 4, 1, bold: true);
+        var normal = new TextAnnotation("Wide text", new Point(0, 0), Red, 20, 1);
+        var bold = new TextAnnotation("Wide text", new Point(0, 0), Red, 20, 1, bold: true);
         Assert.True(bold.Bounds.Width > normal.Bounds.Width);
     });
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
@@ -23,7 +24,7 @@ internal static class ImageExportService
             Filter = "PNG 圖片 (*.png)|*.png|JPEG 圖片 (*.jpg)|*.jpg|BMP 圖片 (*.bmp)|*.bmp",
             InitialDirectory = AppSettings.SaveFolder,
         };
-        return dialog.ShowDialog(owner) == true && Write(image, dialog.FileName);
+        return dialog.ShowDialog(owner) == true && Write(image, dialog.FileName) && AfterSave(dialog.FileName, copyPath: true);
     }
 
     /// <summary>Saves a PNG straight to the configured folder without asking.</summary>
@@ -31,7 +32,7 @@ internal static class ImageExportService
     public static string? QuickSave(BitmapSource image, string? title = null)
     {
         string path = NewPath(AppSettings.SaveFolder, ".png", title);
-        return Write(image, path) ? path : null;
+        return Write(image, path) && AfterSave(path, copyPath: true) ? path : null;
     }
 
     private static bool Write(BitmapSource image, string path)
@@ -77,6 +78,8 @@ internal static class ImageExportService
         try
         {
             File.Copy(sourcePath, dialog.FileName, overwrite: true);
+            // The recording itself goes on the clipboard, so its path isn't copied.
+            AfterSave(dialog.FileName, copyPath: false);
             return dialog.FileName;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -84,6 +87,26 @@ internal static class ImageExportService
             ShowError(ex);
             return null;
         }
+    }
+
+    /// <summary>Copies the path and/or selects the file in Explorer, as configured.</summary>
+    /// <returns>Always true, so it can be chained after a successful save.</returns>
+    private static bool AfterSave(string path, bool copyPath)
+    {
+        if (copyPath && AppSettings.CopyPathAfterSave)
+            ClipboardService.SetText(path);
+        if (AppSettings.RevealAfterSave)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = false });
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Explorer unavailable; the file is saved regardless.
+            }
+        }
+        return true;
     }
 
     private static void ShowError(Exception ex) =>
