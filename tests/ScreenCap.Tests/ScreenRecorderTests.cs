@@ -34,6 +34,51 @@ public class ScreenRecorderTests
         }
     }
 
+    private sealed class FakeAudioEncoder : IFrameEncoder, IAudioEncoder
+    {
+        public FakeEncoder Video { get; } = new();
+        public List<(int Frames, TimeSpan Time)> Audio { get; } = new();
+
+        public void AddAudio(short[] samples, TimeSpan timestamp)
+        {
+            Video.Threads.Add(Environment.CurrentManagedThreadId);
+            Audio.Add((samples.Length / AudioMixer.Channels, timestamp));
+        }
+
+        public void AddFrame(byte[] bgra, TimeSpan timestamp) => Video.AddFrame(bgra, timestamp);
+        public void Finish(TimeSpan endTime) => Video.Finish(endTime);
+        public void Dispose() => Video.Dispose();
+    }
+
+    [Fact]
+    public async Task Audio_CoversTheWholeRecording_WithoutThePausedTime()
+    {
+        FakeAudioEncoder? encoder = null;
+        // Real devices: without a microphone (or with access denied) that source is reported and stays silent.
+        var recorder = new ScreenRecorder(new Int32Rect(0, 0, 64, 48), 20, () => encoder = new FakeAudioEncoder(),
+            audio: AudioSources.System | AudioSources.Microphone);
+        await recorder.StartAsync();
+        await Task.Delay(400);
+        recorder.Pause();
+        await Task.Delay(400);
+        recorder.Resume();
+        await Task.Delay(400);
+        await recorder.StopAsync();
+
+        Assert.NotNull(encoder);
+        var end = encoder.Video.EndTime!.Value;
+        Assert.InRange(end.TotalMilliseconds, 650, 1200); // ~800 ms recorded, not ~1200
+        Assert.Equal(TimeSpan.Zero, encoder.Audio[0].Time);
+        long frames = 0;
+        foreach (var (count, time) in encoder.Audio)
+        {
+            Assert.Equal(frames * TimeSpan.TicksPerSecond / AudioMixer.SampleRate, time.Ticks); // contiguous, no overlap
+            frames += count;
+        }
+        Assert.Equal(end.Ticks * AudioMixer.SampleRate / TimeSpan.TicksPerSecond, frames); // up to the end of the video
+        Assert.Single(encoder.Video.Threads); // audio is written on the encoding thread too
+    }
+
     [Fact]
     public async Task Records_FramesAtTheRequestedRate_ThenFinishesAndDisposes()
     {

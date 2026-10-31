@@ -16,6 +16,13 @@ internal interface IFrameEncoder : IDisposable
     void Finish(TimeSpan endTime);
 }
 
+/// <summary>An encoder that can also write an audio track.</summary>
+internal interface IAudioEncoder
+{
+    /// <param name="samples">Interleaved 16-bit samples in the <see cref="AudioMixer"/> format.</param>
+    void AddAudio(short[] samples, TimeSpan timestamp);
+}
+
 /// <summary>
 /// Records a screen region through an <see cref="IFrameEncoder"/>. Frames are captured on one thread and
 /// encoded on another, streaming to disk so memory use stays flat regardless of recording length.
@@ -29,7 +36,10 @@ internal sealed class ScreenRecorder
     private readonly Func<IFrameEncoder> _createEncoder;
     private readonly bool _highlightClicks;
     private readonly KeystrokeMonitor? _keys;
+    private readonly AudioSources _audioSources;
     private readonly BlockingCollection<(byte[] Pixels, TimeSpan Time)> _frames;
+    private readonly ConcurrentQueue<(short[] Samples, TimeSpan Time)> _audio = new();
+    private AudioRecorder? _audioRecorder;
     private readonly ManualResetEventSlim _stopSignal = new();
     private readonly ManualResetEventSlim _running = new(true); // reset while paused
 
@@ -42,9 +52,12 @@ internal sealed class ScreenRecorder
     /// <param name="createEncoder">Called on the encoding thread, which also uses and disposes the encoder.</param>
     /// <param name="highlightClicks">Draw a ring around the cursor when a mouse button is pressed.</param>
     /// <param name="keys">If given, the keys pressed are shown at the bottom of the frames.</param>
-    public ScreenRecorder(Int32Rect region, int fps, Func<IFrameEncoder> createEncoder, bool highlightClicks = false, KeystrokeMonitor? keys = null)
+    /// <param name="audio">Sound to record; the encoder must be an <see cref="IAudioEncoder"/>.</param>
+    public ScreenRecorder(Int32Rect region, int fps, Func<IFrameEncoder> createEncoder, bool highlightClicks = false, KeystrokeMonitor? keys = null,
+        AudioSources audio = AudioSources.None)
     {
         _keys = keys;
+        _audioSources = audio;
         _region = region;
         _fps = fps;
         _createEncoder = createEncoder;
@@ -63,6 +76,9 @@ internal sealed class ScreenRecorder
     }
 
     public bool IsPaused => !_running.IsSet;
+
+    /// <summary>Audio sources that were requested but couldn't be opened (e.g. no microphone).</summary>
+    public AudioSources FailedAudio { get; private set; }
 
     /// <summary>Stops capturing frames until <see cref="Resume"/>; the paused time is not part of the recording.</summary>
     public void Pause()
@@ -89,6 +105,19 @@ internal sealed class ScreenRecorder
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _encodeTask = Task.Factory.StartNew(() => EncodeLoop(ready), TaskCreationOptions.LongRunning);
         await ready.Task;
+        if (_audioSources != AudioSources.None)
+        {
+            _audioRecorder = new AudioRecorder(_audioSources, () => Elapsed, () => IsPaused, (samples, time) => _audio.Enqueue((samples, time)));
+            try
+            {
+                FailedAudio = await _audioRecorder.StartAsync();
+            }
+            catch
+            {
+                _audioRecorder = null;
+                FailedAudio = _audioSources;
+            }
+        }
         lock (_clockLock)
             _clock.Start();
         _captureTask = Task.Factory.StartNew(CaptureLoop, TaskCreationOptions.LongRunning);
@@ -128,7 +157,14 @@ internal sealed class ScreenRecorder
         finally
         {
             _endTime = Elapsed;
-            _frames.CompleteAdding();
+            try
+            {
+                _audioRecorder?.Stop(_endTime); // flushes the remaining audio into the queue
+            }
+            finally
+            {
+                _frames.CompleteAdding();
+            }
         }
     }
 
@@ -151,7 +187,11 @@ internal sealed class ScreenRecorder
             using (encoder)
             {
                 foreach (var (pixels, time) in _frames.GetConsumingEnumerable())
+                {
+                    WriteAudio(encoder);
                     encoder.AddFrame(pixels, time);
+                }
+                WriteAudio(encoder);
                 encoder.Finish(_endTime);
             }
         }
@@ -163,6 +203,12 @@ internal sealed class ScreenRecorder
             throw;
         }
     }
+    private void WriteAudio(IFrameEncoder encoder)
+    {
+        while (_audio.TryDequeue(out var chunk))
+            (encoder as IAudioEncoder)?.AddAudio(chunk.Samples, chunk.Time);
+    }
+
     /// <summary>Reusable GDI resources for grabbing one region, including the mouse cursor.</summary>
     private sealed class RegionGrabber : IDisposable
     {

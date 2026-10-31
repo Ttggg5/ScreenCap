@@ -111,6 +111,13 @@ internal static class AppSettings
         set => Set("RecordingFormat", value.ToString());
     }
 
+    /// <summary>Sound recorded into MP4 recordings; GIF has no audio.</summary>
+    public static AudioSources RecordingAudio
+    {
+        get => Enum.TryParse(Get("RecordingAudio"), out AudioSources sources) ? sources : AudioSources.System;
+        set => Set("RecordingAudio", value.ToString());
+    }
+
     public static AppTheme Theme
     {
         get => Enum.TryParse(Get("Theme"), out AppTheme mode) ? mode : AppTheme.System;

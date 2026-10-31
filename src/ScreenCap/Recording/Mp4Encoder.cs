@@ -3,21 +3,25 @@ using static ScreenCap.Recording.MediaFoundation;
 namespace ScreenCap.Recording;
 
 /// <summary>
-/// Encodes frames to an H.264 MP4 file with the Media Foundation sink writer built into Windows.
-/// Must be created, used and disposed on the same thread.
+/// Encodes frames to an H.264 MP4 file with the Media Foundation sink writer built into Windows,
+/// optionally with an AAC audio track. Must be created, used and disposed on the same thread.
 /// </summary>
-internal sealed unsafe class Mp4Encoder : IFrameEncoder
+internal sealed unsafe class Mp4Encoder : IFrameEncoder, IAudioEncoder
 {
+    private const uint AacBytesPerSecond = 24000; // 192 kbps; the AAC encoder accepts 12000, 16000, 20000 or 24000
+
     private readonly int _sourceWidth, _width, _height;
     private readonly bool _comInitialized;
     private IntPtr _writer;
     private uint _stream;
+    private uint _audioStream = uint.MaxValue; // none
 
     // A sample is written only once the next frame arrives, because its duration depends on that timestamp.
     private IntPtr _pending;
     private long _pendingTime = -1;
 
-    public Mp4Encoder(string path, int width, int height, int fps)
+    /// <param name="audio">Add an audio track, fed through <see cref="AddAudio"/>.</param>
+    public Mp4Encoder(string path, int width, int height, int fps, bool audio = false)
     {
         // H.264 needs even dimensions; drop the odd last column/row.
         _sourceWidth = width;
@@ -66,6 +70,9 @@ internal sealed unsafe class Mp4Encoder : IFrameEncoder
                 Release(input);
             }
 
+            if (audio)
+                AddAudioStream();
+
             BeginWriting(_writer);
         }
         catch
@@ -73,6 +80,44 @@ internal sealed unsafe class Mp4Encoder : IFrameEncoder
             Dispose();
             throw;
         }
+    }
+
+    /// <summary>AAC out, 16-bit PCM in, in the <see cref="AudioMixer"/> format.</summary>
+    private void AddAudioStream()
+    {
+        IntPtr output = CreateAudioType(MFAudioFormat_AAC);
+        try
+        {
+            SetUInt32(output, MF_MT_AUDIO_AVG_BYTES_PER_SECOND, AacBytesPerSecond);
+            _audioStream = AddStream(_writer, output);
+        }
+        finally
+        {
+            Release(output);
+        }
+
+        IntPtr input = CreateAudioType(MFAudioFormat_PCM);
+        try
+        {
+            SetUInt32(input, MF_MT_AUDIO_BLOCK_ALIGNMENT, AudioMixer.Channels * 2);
+            SetUInt32(input, MF_MT_AUDIO_AVG_BYTES_PER_SECOND, AudioMixer.SampleRate * AudioMixer.Channels * 2);
+            Check(SetInputMediaType(_writer, _audioStream, input, IntPtr.Zero));
+        }
+        finally
+        {
+            Release(input);
+        }
+    }
+
+    private static IntPtr CreateAudioType(Guid subtype)
+    {
+        Check(MFCreateMediaType(out var type));
+        SetGuid(type, MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+        SetGuid(type, MF_MT_SUBTYPE, subtype);
+        SetUInt32(type, MF_MT_AUDIO_NUM_CHANNELS, AudioMixer.Channels);
+        SetUInt32(type, MF_MT_AUDIO_SAMPLES_PER_SECOND, AudioMixer.SampleRate);
+        SetUInt32(type, MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+        return type;
     }
 
     private IntPtr CreateVideoType(Guid subtype, int fps)
@@ -115,6 +160,29 @@ internal sealed unsafe class Mp4Encoder : IFrameEncoder
         _pendingTime = time;
     }
 
+    public void AddAudio(short[] samples, TimeSpan timestamp)
+    {
+        if (_audioStream == uint.MaxValue || samples.Length == 0)
+            return;
+        uint length = (uint)(samples.Length * 2);
+        IntPtr sample = CreateSample(length, data =>
+        {
+            fixed (short* src = samples)
+                Buffer.MemoryCopy(src, data, length, length);
+        });
+        try
+        {
+            long frames = samples.Length / AudioMixer.Channels;
+            SetSampleTime(sample, timestamp.Ticks);
+            SetSampleDuration(sample, frames * TimeSpan.TicksPerSecond / AudioMixer.SampleRate);
+            WriteSample(_writer, _audioStream, sample);
+        }
+        finally
+        {
+            Release(sample);
+        }
+    }
+
     public void Finish(TimeSpan endTime)
     {
         WritePending(Math.Max(endTime.Ticks, _pendingTime + 1));
@@ -124,18 +192,28 @@ internal sealed unsafe class Mp4Encoder : IFrameEncoder
     private IntPtr CreateSample(byte[] bgra)
     {
         int rowBytes = _width * 4;
-        uint length = (uint)(rowBytes * _height);
+        return CreateSample((uint)(rowBytes * _height), data =>
+        {
+            fixed (byte* src = bgra)
+            {
+                for (int y = 0; y < _height; y++)
+                    Buffer.MemoryCopy(src + (long)y * _sourceWidth * 4, data + (long)y * rowBytes, rowBytes, rowBytes);
+            }
+        });
+    }
+
+    private delegate void FillBuffer(byte* data);
+
+    /// <summary>Creates a sample with one buffer of <paramref name="length"/> bytes, filled by <paramref name="fill"/>.</summary>
+    private static IntPtr CreateSample(uint length, FillBuffer fill)
+    {
         Check(MFCreateMemoryBuffer(length, out var buffer));
         try
         {
             byte* data = Lock(buffer);
             try
             {
-                fixed (byte* src = bgra)
-                {
-                    for (int y = 0; y < _height; y++)
-                        Buffer.MemoryCopy(src + (long)y * _sourceWidth * 4, data + (long)y * rowBytes, rowBytes, rowBytes);
-                }
+                fill(data);
             }
             finally
             {

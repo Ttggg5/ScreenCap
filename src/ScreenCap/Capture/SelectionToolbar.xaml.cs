@@ -332,6 +332,31 @@ internal partial class SelectionToolbar : UserControl
         GifFormat.IsChecked = format == RecordingFormat.Gif;
         Mp4Format.IsChecked = format == RecordingFormat.Mp4;
         RecordButton.ToolTip = $"開始錄製 {RecordingSession.DisplayName(format)} (Enter)";
+        ShowAudio(format);
+    }
+
+    /// <summary>Sound can only be recorded into MP4; for GIF the toggles are dimmed and show as off.</summary>
+    private void ShowAudio(RecordingFormat format)
+    {
+        bool mp4 = format == RecordingFormat.Mp4;
+        var audio = RecordingSession.Audio;
+        foreach (var (toggle, source, name) in new[] { (SystemAudioToggle, AudioSources.System, "系統聲音"), (MicrophoneToggle, AudioSources.Microphone, "麥克風") })
+        {
+            bool on = mp4 && audio.HasFlag(source);
+            toggle.IsEnabled = mp4;
+            toggle.Opacity = mp4 ? 1 : 0.4;
+            toggle.IsChecked = on;
+            toggle.ToolTip = mp4 ? $"錄製{name}：{(on ? "開" : "關")}" : $"錄製{name}（僅 MP4 可錄聲音）";
+        }
+        ToolTipService.SetShowOnDisabled(SystemAudioToggle, true);
+        ToolTipService.SetShowOnDisabled(MicrophoneToggle, true);
+    }
+
+    private void OnAudioClick(object sender, RoutedEventArgs e)
+    {
+        var source = sender == MicrophoneToggle ? AudioSources.Microphone : AudioSources.System;
+        RecordingSession.Audio ^= source;
+        ShowAudio(RecordingSession.Format);
     }
 
     private void OnFormatClick(object sender, RoutedEventArgs e)

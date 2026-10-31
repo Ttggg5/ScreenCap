@@ -23,6 +23,14 @@ internal static unsafe class MediaFoundation
     public static readonly Guid MFMediaType_Video = new("73646976-0000-0010-8000-00aa00389b71");
     public static readonly Guid MFVideoFormat_H264 = new("34363248-0000-0010-8000-00aa00389b71");
     public static readonly Guid MFVideoFormat_RGB32 = new("00000016-0000-0010-8000-00aa00389b71");
+    public static readonly Guid MF_MT_AUDIO_NUM_CHANNELS = new("37e48bf5-645e-4c5b-89de-ada9e29b696a");
+    public static readonly Guid MF_MT_AUDIO_SAMPLES_PER_SECOND = new("5faeeae7-0290-4c31-9e8a-c534f68d9dba");
+    public static readonly Guid MF_MT_AUDIO_BITS_PER_SAMPLE = new("f2deb57f-40fa-4764-aa33-ed4f2d1ff669");
+    public static readonly Guid MF_MT_AUDIO_AVG_BYTES_PER_SECOND = new("1aab75c8-cfef-451c-ab95-ac034b8e1731");
+    public static readonly Guid MF_MT_AUDIO_BLOCK_ALIGNMENT = new("322de230-9eeb-43bd-ab7a-ff412251541d");
+    public static readonly Guid MFMediaType_Audio = new("73647561-0000-0010-8000-00aa00389b71");
+    public static readonly Guid MFAudioFormat_AAC = new("00001610-0000-0010-8000-00aa00389b71");
+    public static readonly Guid MFAudioFormat_PCM = new("00000001-0000-0010-8000-00aa00389b71");
     public static readonly Guid CODECAPI_AVEncCommonRateControlMode = new("1c0608e9-370c-4710-8a58-cb6181c42423");
     public static readonly Guid CODECAPI_AVEncCommonQuality = new("fcbf57a3-7ea5-4b0c-9644-69b40c39c391");
 
@@ -63,7 +71,7 @@ internal static unsafe class MediaFoundation
             Marshal.ThrowExceptionForHR(hr);
     }
 
-    private static void** Vtbl(IntPtr obj) => *(void***)obj;
+    public static void** Vtbl(IntPtr obj) => *(void***)obj;
 
     public static void Release(IntPtr obj)
     {

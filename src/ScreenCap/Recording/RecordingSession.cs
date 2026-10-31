@@ -38,6 +38,13 @@ internal static class RecordingSession
 
     public static string DisplayName(RecordingFormat format) => format == RecordingFormat.Mp4 ? "MP4" : "GIF";
 
+    /// <summary>Sound for the next MP4 recording; remembered across runs.</summary>
+    public static AudioSources Audio
+    {
+        get => AppSettings.RecordingAudio;
+        set => AppSettings.RecordingAudio = value;
+    }
+
     /// <param name="title">Title of the recorded window, for the file name.</param>
     public static async void Start(Int32Rect region, string? title = null)
     {
@@ -56,8 +63,9 @@ internal static class RecordingSession
         int width = region.Width, height = region.Height;
         bool clicks = AppSettings.HighlightClicks;
         var keys = _keys = AppSettings.ShowKeystrokes ? new KeystrokeMonitor() : null; // the hook needs the UI thread
+        var audio = Audio;
         var recorder = _format == RecordingFormat.Mp4
-            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond), clicks, keys)
+            ? new ScreenRecorder(region, Mp4FramesPerSecond, () => new Mp4Encoder(temp, width, height, Mp4FramesPerSecond, audio != AudioSources.None), clicks, keys, audio)
             : new ScreenRecorder(region, GifFramesPerSecond, () => new GifEncoder(
                 new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16), width, height, ownsStream: true), clicks, keys);
         try
@@ -74,6 +82,11 @@ internal static class RecordingSession
             return;
         }
 
+        if (recorder.FailedAudio != AudioSources.None)
+            Notifier.Show($"無法錄製{AudioName(recorder.FailedAudio)}，這次錄影不會包含該聲音。" + (recorder.FailedAudio.HasFlag(AudioSources.Microphone)
+                ? "請確認麥克風已連接，並在 Windows 的「設定 → 隱私權與安全性 → 麥克風」中允許桌面應用程式存取。"
+                : "請確認有可用的播放裝置。"));
+
         _recorder = recorder;
         _frame = new RecordingFrameWindow(region);
         _bar = new RecordingControlWindow(region, () => _recorder?.Elapsed ?? TimeSpan.Zero);
@@ -83,6 +96,13 @@ internal static class RecordingSession
         _frame.Show();
         _bar.Show();
     }
+
+    private static string AudioName(AudioSources sources) => sources switch
+    {
+        AudioSources.System => "系統聲音",
+        AudioSources.Microphone => "麥克風",
+        _ => "系統聲音與麥克風",
+    };
 
     public static bool IsPaused => _recorder?.IsPaused == true;
 
