@@ -61,7 +61,6 @@ internal sealed class OverlayWindow : Window
     private readonly WindowDetector _detector;
 
     private readonly Canvas _root = new();
-    private readonly ScaleTransform _rootScale = new(1, 1);
     private readonly ScaleTransform _chromeScale = new(1, 1);
     private readonly RectangleGeometry _hole = new(new Rect());
     private readonly RectangleGeometry _annotationClip = new(new Rect());
@@ -146,7 +145,6 @@ internal sealed class OverlayWindow : Window
         _root.Height = snap.Height;
         _root.HorizontalAlignment = HorizontalAlignment.Left;
         _root.VerticalAlignment = VerticalAlignment.Top;
-        _root.LayoutTransform = _rootScale;
 
         var background = new Image { Source = snap.Bitmap, Width = snap.Width, Height = snap.Height, Stretch = Stretch.Fill };
         RenderOptions.SetBitmapScalingMode(background, BitmapScalingMode.NearestNeighbor);
@@ -255,7 +253,9 @@ internal sealed class OverlayWindow : Window
         if (scale <= 0)
             scale = 1;
         _scale = scale;
-        _rootScale.ScaleX = _rootScale.ScaleY = 1 / scale;
+        // Assign a new transform: mutating the ScaleX/ScaleY of the current one updates layout but not
+        // the rendered visual transform, so the screenshot would be drawn enlarged by the DPI scale.
+        _root.LayoutTransform = new ScaleTransform(1 / scale, 1 / scale);
         _chromeScale.ScaleX = _chromeScale.ScaleY = scale;
         _border.StrokeThickness = Math.Max(1, Math.Round(scale));
         foreach (var h in _handles)
