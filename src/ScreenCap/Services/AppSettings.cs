@@ -168,6 +168,26 @@ internal static class AppSettings
         set => Set("ShowKeystrokes", value ? "1" : "0");
     }
 
+    /// <summary>Look for a new release on GitHub once a day.</summary>
+    public static bool AutoCheckUpdates
+    {
+        get => Get("AutoCheckUpdates") != "0";
+        set => Set("AutoCheckUpdates", value ? "1" : "0");
+    }
+
+    /// <summary>Release tag the user chose to skip; automatic checks don't announce it again.</summary>
+    public static string? SkippedUpdate
+    {
+        get => Get("SkippedUpdate");
+        set => Set("SkippedUpdate", value ?? "");
+    }
+
+    public static DateTime LastUpdateCheck
+    {
+        get => DateTime.TryParse(Get("LastUpdateCheck"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var time) ? time : DateTime.MinValue;
+        set => Set("LastUpdateCheck", value.ToString("o", CultureInfo.InvariantCulture));
+    }
+
     /// <summary>Font for text annotations; remembered from the last one chosen.</summary>
     public static string TextFont
     {

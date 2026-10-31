@@ -17,12 +17,14 @@ internal sealed record TrayActions(
     Action CloseAllPins,
     Action ReleasePins,
     Action OpenSettings,
+    Action CheckForUpdates,
     Action Exit);
 
 internal sealed class TrayIconHost : IDisposable
 {
     private readonly Forms.NotifyIcon _notifyIcon;
     private readonly Icon _icon;
+    private Action? _balloonClick;
 
     public TrayIconHost(TrayActions actions)
     {
@@ -126,6 +128,7 @@ internal sealed class TrayIconHost : IDisposable
         menu.Items.Add(startup);
         menu.Items.Add("設定…", null, (_, _) => actions.OpenSettings());
         menu.Items.Add("使用說明", null, (_, _) => HelpWindow.ShowManual());
+        menu.Items.Add("檢查更新…", null, (_, _) => actions.CheckForUpdates());
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("結束", null, (_, _) => actions.Exit());
 
@@ -136,6 +139,12 @@ internal sealed class TrayIconHost : IDisposable
             ContextMenuStrip = menu,
             Visible = true,
         };
+        _notifyIcon.BalloonTipClicked += (_, _) =>
+        {
+            var action = _balloonClick;
+            _balloonClick = null;
+            action?.Invoke();
+        };
         _notifyIcon.MouseClick += (_, e) =>
         {
             if (e.Button == Forms.MouseButtons.Left)
@@ -145,8 +154,12 @@ internal sealed class TrayIconHost : IDisposable
 
     private static string WithHotkey(string text, Hotkey hotkey) => hotkey.IsNone ? text : $"{text} ({hotkey})";
 
-    public void Notify(string title, string message) =>
+    /// <param name="onClick">Run if the notification is clicked; replaces the action of an earlier one.</param>
+    public void Notify(string title, string message, Action? onClick = null)
+    {
+        _balloonClick = onClick;
         _notifyIcon.ShowBalloonTip(3000, title, message, Forms.ToolTipIcon.Info);
+    }
 
     /// <summary>Loads the app icon at the tray's small-icon size so it isn't downscaled blurrily.</summary>
     private static Icon CreateIcon()

@@ -24,6 +24,7 @@ internal sealed class SettingsWindow : Window
     private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _clicks = new() { Content = "錄影時標示滑鼠點擊", IsChecked = AppSettings.HighlightClicks, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _keys = new() { Content = "錄影時顯示按下的按鍵（例如 Ctrl + C）", IsChecked = AppSettings.ShowKeystrokes, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly CheckBox _autoUpdate = new() { Content = "自動檢查更新（每天一次）", IsChecked = AppSettings.AutoCheckUpdates, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _copyPath = new() { Content = "存檔後複製檔案路徑", IsChecked = AppSettings.CopyPathAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly CheckBox _reveal = new() { Content = "存檔後在檔案總管中顯示檔案", IsChecked = AppSettings.RevealAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly ComboBox _confirm = new();
@@ -82,6 +83,8 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(_cursor);
         body.Children.Add(_clicks);
         body.Children.Add(_keys);
+        body.Children.Add(_autoUpdate);
+        body.Children.Add(Hint($"目前版本：{Update.UpdateService.CurrentVersion}。也可以從系統匣選單的「檢查更新…」立即檢查。"));
 
         var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
@@ -159,6 +162,7 @@ internal sealed class SettingsWindow : Window
         _cursor.IsChecked = false;
         _clicks.IsChecked = false;
         _keys.IsChecked = false;
+        _autoUpdate.IsChecked = true;
         _copyPath.IsChecked = false;
         _reveal.IsChecked = false;
         _confirm.SelectedIndex = 0;
@@ -182,6 +186,7 @@ internal sealed class SettingsWindow : Window
         AppSettings.CaptureCursor = _cursor.IsChecked == true;
         AppSettings.HighlightClicks = _clicks.IsChecked == true;
         AppSettings.ShowKeystrokes = _keys.IsChecked == true;
+        AppSettings.AutoCheckUpdates = _autoUpdate.IsChecked == true;
         AppSettings.CopyPathAfterSave = _copyPath.IsChecked == true;
         AppSettings.RevealAfterSave = _reveal.IsChecked == true;
         AppSettings.ConfirmAction = (Capture.OverlayAction)((ComboBoxItem)_confirm.SelectedItem).Tag;
