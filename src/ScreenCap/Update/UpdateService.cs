@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -31,7 +32,12 @@ internal static class UpdateService
     /// Only the published single-file exe can replace itself; a development build runs from a folder of
     /// DLLs (its assembly has a location on disk).
     /// </summary>
-    public static bool CanSelfUpdate => string.IsNullOrEmpty(typeof(UpdateService).Assembly.Location) && Environment.ProcessPath != null;
+    public static bool CanSelfUpdate
+    {
+        // The empty location in a single-file app is exactly what is being tested for here.
+        [UnconditionalSuppressMessage("SingleFile", "IL3000", Justification = "Detects the single-file build on purpose.")]
+        get => string.IsNullOrEmpty(typeof(UpdateService).Assembly.Location) && Environment.ProcessPath != null;
+    }
 
     private static HttpClient CreateClient()
     {
