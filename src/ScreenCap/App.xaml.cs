@@ -51,6 +51,7 @@ public partial class App : Application
         if (Environment.ProcessPath is { } exe)
             UpdateService.CleanUp(exe);
         UpdateCheck.StartAutomatic();
+        _ = ScreenshotHistory.IndexTextAsync(); // screenshots kept before text search existed, or before an OCR language was installed
 
         var failed = RegisterHotkeys();
         if (failed.Count > 0)

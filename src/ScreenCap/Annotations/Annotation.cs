@@ -92,7 +92,8 @@ internal abstract class Annotation
     public abstract void MoveFrom(Annotation origin, Vector delta);
 
     /// <summary>Sets this annotation to <paramref name="origin"/> with one handle dragged by <paramref name="delta"/>.</summary>
-    public virtual void DragHandleFrom(Annotation origin, int handle, Vector delta) { }
+    /// <param name="constrain">Shift held: box-shaped annotations keep their aspect ratio.</param>
+    public virtual void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false) { }
 
     public Annotation Clone()
     {
@@ -144,6 +145,24 @@ internal static class RectHandles
         if (handle is 4 or 5 or 6) b += delta.Y;
         return new Rect(new Point(Math.Min(l, right), Math.Min(t, b)), new Point(Math.Max(l, right), Math.Max(t, b)));
     }
+
+    /// <summary>
+    /// Like <see cref="Resize"/>, but scales both sides by the same factor, so the aspect ratio stays.
+    /// The opposite corner stays put; for a side handle, the opposite side, centered as before.
+    /// </summary>
+    public static Rect ResizeKeepingAspect(Rect r, int handle, Vector delta)
+    {
+        var free = Resize(r, handle, delta);
+        if (r.Width < 1 || r.Height < 1)
+            return free;
+        double sx = free.Width / r.Width, sy = free.Height / r.Height;
+        // A corner follows the side pulled further, inwards or outwards.
+        double s = handle is 1 or 5 ? sy : handle is 3 or 7 ? sx : Math.Abs(sx - 1) >= Math.Abs(sy - 1) ? sx : sy;
+        double w = r.Width * s, h = r.Height * s;
+        double left = handle is 0 or 6 or 7 ? r.Right - w : handle is 1 or 5 ? (r.Left + r.Right - w) / 2 : r.Left;
+        double top = handle is 0 or 1 or 2 ? r.Bottom - h : handle is 3 or 7 ? (r.Top + r.Bottom - h) / 2 : r.Top;
+        return new Rect(left, top, w, h);
+    }
 }
 
 /// <summary>Base for shapes defined by a drag from a start point to an end point.</summary>
@@ -178,9 +197,9 @@ internal abstract class DragAnnotation : Annotation
         End = o.End + delta;
     }
 
-    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false)
     {
-        var r = RectHandles.Resize(origin.Bounds, handle, delta);
+        var r = constrain ? RectHandles.ResizeKeepingAspect(origin.Bounds, handle, delta) : RectHandles.Resize(origin.Bounds, handle, delta);
         Start = r.TopLeft;
         End = r.BottomRight;
     }
@@ -227,7 +246,7 @@ internal class LineAnnotation(Point start, Color color, double size, double scal
 
     protected override Point Constrain(Point point) => SnapToAngle(Start, point);
 
-    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false)
     {
         var o = (LineAnnotation)origin;
         Start = handle == 0 ? o.Start + delta : o.Start;
@@ -463,7 +482,7 @@ internal sealed class PolylineAnnotation : Annotation
     public override void MoveFrom(Annotation origin, Vector delta) =>
         _points = ((PolylineAnnotation)origin)._points.Select(p => p + delta).ToList();
 
-    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false)
     {
         var o = (PolylineAnnotation)origin;
         _points = new List<Point>(o._points);
@@ -905,7 +924,7 @@ internal sealed class CalloutAnnotation(string text, Point position, Point tip, 
         Tip = ((CalloutAnnotation)origin).Tip + delta;
     }
 
-    public override void DragHandleFrom(Annotation origin, int handle, Vector delta) => Tip = ((CalloutAnnotation)origin).Tip + delta;
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false) => Tip = ((CalloutAnnotation)origin).Tip + delta;
 
     /// <summary>The rounded box joined with a tail from its center toward the tip.</summary>
     private Geometry Shape()
@@ -1020,7 +1039,7 @@ internal sealed class MagnifierAnnotation(Point start, ScreenSnapshot snapshot, 
         return source.Contains(point) || View.Contains(point);
     }
 
-    public override void DragHandleFrom(Annotation origin, int handle, Vector delta)
+    public override void DragHandleFrom(Annotation origin, int handle, Vector delta, bool constrain = false)
     {
         var o = (MagnifierAnnotation)origin;
         if (handle == ViewHandle)
@@ -1028,7 +1047,7 @@ internal sealed class MagnifierAnnotation(Point start, ScreenSnapshot snapshot, 
             _viewOffset = CenterOf(o.View) - CenterOf(o.Source) + delta;
             return;
         }
-        var r = RectHandles.Resize(o.Source, handle, delta);
+        var r = constrain ? RectHandles.ResizeKeepingAspect(o.Source, handle, delta) : RectHandles.Resize(o.Source, handle, delta);
         Start = r.TopLeft;
         End = r.BottomRight;
         _viewOffset = o._viewOffset;

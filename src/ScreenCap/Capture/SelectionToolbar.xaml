@@ -154,6 +154,7 @@
                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
                         </Border>
                     </ToggleButton>
+                    <ToggleButton x:Name="StampTool" Style="{StaticResource ToolToggle}" ToolTip="圖章：點一下蓋上勾、叉、文字章或自訂圖片" Content="&#xE734;" Click="OnToolClick" />
                     <ToggleButton x:Name="MosaicTool" Style="{StaticResource ToolToggle}" ToolTip="馬賽克 / 模糊" Content="&#xE80A;" Click="OnToolClick" />
                     <ToggleButton x:Name="MagnifierTool" Style="{StaticResource ToolToggle}" ToolTip="放大鏡：框選要放大的範圍" Content="&#xE71E;" Click="OnToolClick" />
                     <ToggleButton x:Name="SpotlightTool" Style="{StaticResource ToolToggle}" ToolTip="聚光燈：框選的範圍以外調暗" Click="OnToolClick">
@@ -215,6 +216,45 @@
                     <Slider x:Name="SizeSlider" Width="110" Minimum="1" Maximum="20" SmallChange="1" LargeChange="2" TickFrequency="1"
                             IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnSizeSliderChanged" />
                     <local:NumberBox x:Name="SizeValue" Margin="6,0,2,0" />
+                    <StackPanel x:Name="StampOptions" Orientation="Horizontal" Visibility="Collapsed">
+                        <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
+                        <ToggleButton x:Name="StampToggle" Style="{StaticResource SizeDot}" Width="44" ToolTip="選擇圖章">
+                            <StackPanel Orientation="Horizontal">
+                                <Image x:Name="StampPreview" Width="20" Height="20" />
+                                <TextBlock Text="&#xE70D;" FontSize="8" VerticalAlignment="Center" Margin="4,0,0,0" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Popup x:Name="StampPopup" PlacementTarget="{Binding ElementName=StampToggle}" Placement="Bottom" VerticalOffset="4"
+                               StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                               IsOpen="{Binding IsChecked, ElementName=StampToggle, Mode=TwoWay}" Opened="OnStampPopupOpened">
+                            <Border Background="{DynamicResource Brush.Menu}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="6" Margin="0,0,8,8">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.25" />
+                                </Border.Effect>
+                                <StackPanel>
+                                    <WrapPanel x:Name="StampList" Width="216" />
+                                    <Rectangle Height="1" Margin="0,6" Fill="{DynamicResource Brush.Divider}" />
+                                    <!-- Regular framed buttons, unlike the icon-only toolbar buttons, so they read as actions -->
+                                    <UniformGrid Columns="2">
+                                        <Button Style="{DynamicResource {x:Type Button}}" Margin="0,0,3,0" Padding="4,4" Focusable="False"
+                                                ToolTip="選擇圖片檔加入圖章清單" Click="OnAddStampFromFile">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE8E5;" FontFamily="{StaticResource IconFont}" FontSize="13" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                                <TextBlock Text="從檔案加入…" FontFamily="Microsoft JhengHei UI" FontSize="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Style="{DynamicResource {x:Type Button}}" Margin="3,0,0,0" Padding="4,4" Focusable="False"
+                                                ToolTip="把剪貼簿中的圖片加入圖章清單" Click="OnAddStampFromClipboard">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE77F;" FontFamily="{StaticResource IconFont}" FontSize="13" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                                <TextBlock Text="從剪貼簿加入" FontFamily="Microsoft JhengHei UI" FontSize="12" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </StackPanel>
                     <StackPanel x:Name="TextOptions" Orientation="Horizontal" Visibility="Collapsed">
                         <Rectangle Style="{StaticResource Divider}" Margin="5,4" />
                         <ComboBox x:Name="FontBox" Width="150" Height="26" Focusable="False" VerticalAlignment="Center" FontSize="12" ToolTip="字型"

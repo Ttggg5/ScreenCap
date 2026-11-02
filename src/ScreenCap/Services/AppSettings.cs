@@ -229,6 +229,13 @@ internal static class AppSettings
         set => Set("TextFont", value);
     }
 
+    /// <summary>Id of the stamp used last; see <see cref="Stamp.Id"/>.</summary>
+    public static string? LastStamp
+    {
+        get => Get("LastStamp");
+        set => Set("LastStamp", value ?? "");
+    }
+
     /// <summary>Draw the mouse cursor into screenshots.</summary>
     public static bool CaptureCursor
     {

@@ -290,6 +290,11 @@ internal sealed class OverlayWindow : Window
             Select(null);
             Refresh();
         };
+        _toolbar.StampChanged += stamp =>
+        {
+            if (_selected is StampAnnotation)
+                Restyle(a => ((StampAnnotation)a).Stamp = stamp);
+        };
         _toolbar.ColorChanged += c =>
         {
             _color = c;
@@ -1071,6 +1076,7 @@ internal sealed class OverlayWindow : Window
         ToolKind.Mosaic => new MosaicAnnotation(p, _snap, _mosaicStrength, _scale, _mosaicBlur),
         ToolKind.Spotlight => new SpotlightAnnotation(p, _scale, _spotlightDim),
         ToolKind.Magnifier => new MagnifierAnnotation(p, _snap, _color, SizeOf(_tool), _scale),
+        ToolKind.Stamp => new StampAnnotation(p, _toolbar.SelectedStamp, _color, SizeOf(_tool), _scale),
         _ => new PenAnnotation(p, _color, SizeOf(ToolKind.Pen), _scale),
     });
 
@@ -1091,6 +1097,7 @@ internal sealed class OverlayWindow : Window
         CalloutAnnotation => ToolKind.Callout,
         TextAnnotation => ToolKind.Text,
         MagnifierAnnotation => ToolKind.Magnifier,
+        StampAnnotation => ToolKind.Stamp,
         MosaicAnnotation => ToolKind.Mosaic,
         SpotlightAnnotation => ToolKind.Spotlight,
         _ => ToolKind.None,
@@ -1149,6 +1156,8 @@ internal sealed class OverlayWindow : Window
                 _textStyle = text.Style;
                 _toolbar.SetTextStyle(_textStyle);
             }
+            if (annotation is StampAnnotation stamp)
+                _toolbar.SetStamp(stamp.Stamp);
         }
         // Without a selection, show the options of the shape the current tool would draw.
         var kind = annotation != null ? KindOf(annotation) : _tool;
@@ -1156,7 +1165,7 @@ internal sealed class OverlayWindow : Window
         var sample = annotation ?? (_tool is ToolKind.None or ToolKind.Text or ToolKind.Callout ? null : CreateAnnotation(default));
         bool textOptions = annotation is TextAnnotation || (annotation == null && _tool is ToolKind.Text or ToolKind.Callout);
         _toolbar.SetOptionsVisible(annotation != null || _tool != ToolKind.None, sample is MosaicAnnotation, textOptions,
-            fill: sample?.CanFill == true, dash: sample?.CanDash == true, spotlight: sample is SpotlightAnnotation);
+            fill: sample?.CanFill == true, dash: sample?.CanDash == true, spotlight: sample is SpotlightAnnotation, stamp: sample is StampAnnotation);
     }
 
     /// <summary>Topmost annotation under the point, only within the visible selection.</summary>
@@ -1213,7 +1222,7 @@ internal sealed class OverlayWindow : Window
         if (_state == State.AnnotationMoving)
             _selected.MoveFrom(_editOrigin, delta);
         else
-            _selected.DragHandleFrom(_editOrigin, _editHandle, delta);
+            _selected.DragHandleFrom(_editOrigin, _editHandle, delta, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
         InvalidateAnnotations();
     }
 

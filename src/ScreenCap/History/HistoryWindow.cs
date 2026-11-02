@@ -48,7 +48,7 @@ internal sealed class HistoryWindow : Window
         _status.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
         _empty.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
 
-        var searchLabel = new TextBlock { Text = "搜尋視窗標題", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var searchLabel = new TextBlock { Text = "搜尋標題或截圖中的文字", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
         _search.TextChanged += (_, _) => Refresh();
         var top = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
         top.Children.Add(searchLabel);
@@ -91,6 +91,7 @@ internal sealed class HistoryWindow : Window
             _instance = null;
         };
         Refresh();
+        _ = ScreenshotHistory.IndexTextAsync(); // catch up, e.g. after installing an OCR language
     }
 
     public static void ShowWindow()
@@ -111,9 +112,7 @@ internal sealed class HistoryWindow : Window
     {
         var all = ScreenshotHistory.Entries;
         string query = _search.Text.Trim();
-        var entries = query.Length == 0
-            ? all
-            : all.Where(e => e.Title?.Contains(query, StringComparison.CurrentCultureIgnoreCase) == true).ToList();
+        var entries = query.Length == 0 ? all : all.Where(e => ScreenshotHistory.Matches(e, query)).ToList();
 
         // Forget thumbnails of deleted screenshots.
         var files = all.Select(e => e.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -124,12 +123,12 @@ internal sealed class HistoryWindow : Window
         _shown.Clear();
         foreach (var entry in entries)
         {
-            var tile = Tile(entry);
+            var tile = Tile(entry, query.Length > 0 ? ScreenshotHistory.Snippet(entry, query) : null);
             _shown.Add((entry, tile));
             _tiles.Children.Add(tile);
         }
-        if (_selected != null && !entries.Contains(_selected))
-            _selected = null;
+        // Entries are replaced when their text is recognized, so they are matched by file.
+        _selected = entries.FirstOrDefault(e => e.File == _selected?.File);
         UpdateSelection();
 
         _clear.IsEnabled = all.Count > 0;
@@ -137,12 +136,15 @@ internal sealed class HistoryWindow : Window
         _empty.Text = AppSettings.HistoryLimit <= 0 && all.Count == 0
             ? "截圖歷史已關閉。可在「設定」中選擇要保留幾張最近的截圖。"
             : all.Count == 0 ? "還沒有截圖。截圖完成後會自動保留一份在這裡。" : "沒有符合的截圖。";
+        int pending = all.Count(e => e.Text == null);
+        string indexing = ScreenshotHistory.IsIndexing && pending > 0 ? $"正在辨識截圖中的文字以供搜尋（還有 {pending} 張）。" : "";
         _status.Text = query.Length == 0
-            ? $"共 {all.Count} 張截圖（最多保留 {AppSettings.HistoryLimit} 張）。雙擊可貼到桌面，右鍵有更多動作。"
-            : $"找到 {entries.Count} 張，共 {all.Count} 張截圖";
+            ? $"共 {all.Count} 張截圖（最多保留 {AppSettings.HistoryLimit} 張）。{indexing}雙擊可貼到桌面，右鍵有更多動作。"
+            : $"找到 {entries.Count} 張，共 {all.Count} 張截圖。{indexing}";
     }
 
-    private Border Tile(HistoryEntry entry)
+    /// <param name="snippet">Matching part of the recognized text, shown under the caption.</param>
+    private Border Tile(HistoryEntry entry, string? snippet)
     {
         var image = new Image { Stretch = Stretch.Uniform, Width = ThumbWidth, Height = ThumbHeight };
         RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
@@ -166,6 +168,11 @@ internal sealed class HistoryWindow : Window
         content.Children.Add(image);
         content.Children.Add(caption);
         content.Children.Add(details);
+        if (snippet != null)
+        {
+            content.Children.Add(new TextBlock { Text = snippet, FontSize = 12, TextWrapping = TextWrapping.Wrap, MaxHeight = 34, Margin = new Thickness(0, 4, 0, 0) }
+                .Themed(TextBlock.ForegroundProperty, "Brush.AccentStrong"));
+        }
 
         var tile = new Border
         {
@@ -234,7 +241,7 @@ internal sealed class HistoryWindow : Window
     {
         foreach (var (entry, tile) in _shown)
         {
-            if (entry == _selected)
+            if (entry.File == _selected?.File)
                 tile.Themed(Border.BorderBrushProperty, "Brush.Accent");
             else
                 tile.BorderBrush = Brushes.Transparent;
@@ -292,7 +299,7 @@ internal sealed class HistoryWindow : Window
     {
         if (_shown.Count == 0)
             return;
-        int index = _shown.FindIndex(s => s.Entry == _selected);
+        int index = _shown.FindIndex(s => s.Entry.File == _selected?.File);
         if (index < 0)
         {
             SelectAndShow(0);
@@ -313,7 +320,7 @@ internal sealed class HistoryWindow : Window
     /// <summary>Deletes the selected screenshot and selects the next one, so several can be deleted in a row.</summary>
     private void DeleteSelected()
     {
-        int index = _shown.FindIndex(s => s.Entry == _selected);
+        int index = _shown.FindIndex(s => s.Entry.File == _selected?.File);
         var next = index + 1 < _shown.Count ? _shown[index + 1].Entry : index > 0 ? _shown[index - 1].Entry : null;
         ScreenshotHistory.Delete(_selected!);
         _selected = next;

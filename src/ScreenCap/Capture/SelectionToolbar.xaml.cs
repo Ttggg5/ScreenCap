@@ -1,8 +1,10 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using ScreenCap.Annotations;
 using ScreenCap.Recording;
 using ScreenCap.Services;
@@ -24,6 +26,7 @@ internal enum ToolKind
     Text,
     Callout,
     Magnifier,
+    Stamp,
     Mosaic,
     Spotlight,
 }
@@ -39,6 +42,7 @@ internal readonly record struct SizeRange(double Min, double Max, double Default
         ToolKind.Text or ToolKind.Callout => new(8, 96, 20, "大小"), // font size
         ToolKind.Magnifier => new(2, 8, 2, "倍率"),   // zoom factor
         ToolKind.Measure => new(1, 10, 2, "粗細"),   // thin, so it doesn't hide what is measured
+        ToolKind.Stamp => new(16, 400, 48, "大小"),  // height, or an image's longest side
         _ => new(1, 20, 4, "粗細"),                  // stroke width
     };
 }
@@ -65,6 +69,7 @@ internal partial class SelectionToolbar : UserControl
             [TextTool] = ToolKind.Text,
             [CalloutTool] = ToolKind.Callout,
             [MagnifierTool] = ToolKind.Magnifier,
+            [StampTool] = ToolKind.Stamp,
             [MosaicTool] = ToolKind.Mosaic,
             [SpotlightTool] = ToolKind.Spotlight,
         };
@@ -93,6 +98,112 @@ internal partial class SelectionToolbar : UserControl
         };
         RecordButton.ToolTip = $"錄製螢幕（{RecordingSession.DisplayName(RecordingSession.Format)}）";
         SetTextStyle(TextStyle.Default with { FontName = AppSettings.TextFont });
+        SetStamp(StampLibrary.Find(AppSettings.LastStamp) ?? Stamp.BuiltIn[0]);
+    }
+
+    // ---------------------------------------------------------------- stamps
+
+    /// <summary>Raised when a stamp is picked in the list.</summary>
+    public event Action<Stamp>? StampChanged;
+
+    public Stamp SelectedStamp { get; private set; } = Stamp.BuiltIn[0];
+
+    /// <summary>Shows <paramref name="stamp"/> as the current one, e.g. when a stamp annotation is selected.</summary>
+    public void SetStamp(Stamp stamp)
+    {
+        SelectedStamp = stamp;
+        UpdateStampPreview();
+    }
+
+    private void UpdateStampPreview() => StampPreview.Source = SelectedStamp.Preview(SelectedColor, 20);
+
+    private void PickStamp(Stamp stamp)
+    {
+        StampToggle.IsChecked = false;
+        SetStamp(stamp);
+        AppSettings.LastStamp = stamp.Id; // remembered for the next capture
+        StampChanged?.Invoke(stamp);
+    }
+
+    /// <summary>Fills the list each time it opens, in the current color and with any pictures added since.</summary>
+    private void OnStampPopupOpened(object? sender, EventArgs e)
+    {
+        StampList.Children.Clear();
+        foreach (var stamp in Stamp.BuiltIn.Concat(StampLibrary.Custom))
+        {
+            var button = new ToggleButton
+            {
+                Style = (Style)FindResource("SizeDot"),
+                Width = 36,
+                Height = 36,
+                IsChecked = stamp.Id == SelectedStamp.Id,
+                ToolTip = stamp.Style == StampStyle.Image ? "自訂圖片（右鍵可移除）" : stamp.Name,
+                Content = new Image { Source = stamp.Preview(SelectedColor, 26), Width = 26, Height = 26 },
+            };
+            button.Click += (_, _) => PickStamp(stamp);
+            if (stamp.Style == StampStyle.Image)
+            {
+                var remove = new MenuItem { Header = "移除這個圖章" };
+                remove.Click += (_, _) =>
+                {
+                    StampLibrary.Remove(stamp);
+                    if (SelectedStamp.Id == stamp.Id)
+                        PickStamp(Stamp.BuiltIn[0]);
+                    OnStampPopupOpened(null, EventArgs.Empty);
+                };
+                button.ContextMenu = new ContextMenu { Items = { remove } };
+            }
+            StampList.Children.Add(button);
+        }
+    }
+
+    private void OnAddStampFromFile(object sender, RoutedEventArgs e)
+    {
+        StampToggle.IsChecked = false;
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "選擇圖章圖片",
+            Filter = "圖片 (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.ico",
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true)
+            return;
+        BitmapSource image;
+        try
+        {
+            var bitmap = new BitmapImage();
+            bitmap.BeginInit();
+            bitmap.CacheOption = BitmapCacheOption.OnLoad;
+            bitmap.UriSource = new Uri(dialog.FileName);
+            bitmap.EndInit();
+            image = bitmap;
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(Window.GetWindow(this), $"無法讀取這張圖片：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        AddStamp(image);
+    }
+
+    private void OnAddStampFromClipboard(object sender, RoutedEventArgs e)
+    {
+        StampToggle.IsChecked = false;
+        if (ClipboardService.GetImage() is { } image)
+            AddStamp(image);
+        else
+            MessageBox.Show(Window.GetWindow(this), "剪貼簿中沒有圖片。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void AddStamp(BitmapSource image)
+    {
+        try
+        {
+            PickStamp(StampLibrary.Add(image));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageBox.Show(Window.GetWindow(this), $"無法儲存圖章：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     /// <summary>
@@ -389,6 +500,8 @@ internal partial class SelectionToolbar : UserControl
         }
         foreach (var button in ColorButtons)
             button.IsChecked = button == target;
+        if (StampPreview != null)
+            UpdateStampPreview();
     }
 
     private void OnPaletteClick(object sender, RoutedEventArgs e)
@@ -461,8 +574,9 @@ internal partial class SelectionToolbar : UserControl
     /// Shows the options row; mosaic shows a blur-strength slider instead of size, color and opacity,
     /// text adds bold / background toggles, and shapes add fill / dash toggles.
     /// </summary>
-    public void SetOptionsVisible(bool visible, bool mosaic = false, bool text = false, bool fill = false, bool dash = false, bool spotlight = false)
+    public void SetOptionsVisible(bool visible, bool mosaic = false, bool text = false, bool fill = false, bool dash = false, bool spotlight = false, bool stamp = false)
     {
+        StampOptions.Visibility = stamp ? Visibility.Visible : Visibility.Collapsed;
         OptionsRow.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         MosaicOptions.Visibility = mosaic ? Visibility.Visible : Visibility.Collapsed;
         SpotlightOptions.Visibility = spotlight ? Visibility.Visible : Visibility.Collapsed;

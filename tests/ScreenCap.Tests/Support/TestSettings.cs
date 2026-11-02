@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.CompilerServices;
 using Microsoft.Win32;
 using ScreenCap.Services;
@@ -13,6 +14,9 @@ internal static class TestSettings
     internal static void Initialize()
     {
         AppSettings.KeyPath = KeyPath;
+        // Never read or write the user's real screenshot history or stamps.
+        ScreenshotHistory.Folder = Path.Combine(Path.GetTempPath(), "ScreenCap.Tests.History");
+        StampLibrary.Folder = Path.Combine(Path.GetTempPath(), "ScreenCap.Tests.Stamps");
         Clear();
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Clear();
     }
