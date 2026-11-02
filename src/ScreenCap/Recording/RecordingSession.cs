@@ -186,6 +186,7 @@ internal static class RecordingSession
             if (File.Exists(temp))
                 File.Delete(temp);
             IsActive = false;
+            MemoryRelease.Schedule(); // frame buffers of the encoder
         }
     }
 }

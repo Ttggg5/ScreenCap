@@ -13,6 +13,9 @@ internal sealed class HotkeyService : IDisposable
     private readonly Dictionary<int, Action> _actions = new();
     private int _nextId = 1;
 
+    /// <summary>The window receiving the hotkey messages (for tests).</summary>
+    internal IntPtr Handle => _source.Handle;
+
     public HotkeyService()
     {
         _source = new HwndSource(new HwndSourceParameters("ScreenCapHotkeys")

@@ -236,6 +236,16 @@ internal static class AppSettings
         set => Set("LastStamp", value ?? "");
     }
 
+    /// <summary>
+    /// Draw windows with the GPU. Smoother on very large screens, but Direct3D and the graphics driver
+    /// take about 200 MB more; off by default since ScreenCap mostly sits in the tray. Applies on restart.
+    /// </summary>
+    public static bool HardwareRendering
+    {
+        get => Get("HardwareRendering") == "1";
+        set => Set("HardwareRendering", value ? "1" : "0");
+    }
+
     /// <summary>Draw the mouse cursor into screenshots.</summary>
     public static bool CaptureCursor
     {

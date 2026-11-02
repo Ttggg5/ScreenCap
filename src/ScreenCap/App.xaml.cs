@@ -28,6 +28,9 @@ public partial class App : Application
             return;
         }
 
+        // Before any window is shown: software rendering never loads Direct3D, which costs ~200 MB.
+        if (!AppSettings.HardwareRendering)
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
         base.OnStartup(e);
         ThemeManager.Initialize(this);
 

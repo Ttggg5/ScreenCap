@@ -87,6 +87,7 @@ internal sealed class HistoryWindow : Window
         ScreenshotHistory.Changed += OnHistoryChanged;
         Closed += (_, _) =>
         {
+            MemoryRelease.Schedule(); // the thumbnails
             ScreenshotHistory.Changed -= OnHistoryChanged;
             _instance = null;
         };

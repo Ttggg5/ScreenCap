@@ -69,6 +69,7 @@ internal static class CaptureSession
             if (overlay.Session is { } session)
                 _last = new LastCapture(snapshot, detector, session.Selection, session.Annotations);
             HandleResult(overlay.Result);
+            MemoryRelease.Schedule(); // the previous capture's screen copy is garbage now
         };
         overlay.Show();
     }
@@ -137,6 +138,7 @@ internal static class CaptureSession
             overlay.Closed += (_, _) =>
             {
                 IsActive = false;
+                MemoryRelease.Schedule();
                 var result = overlay.Result;
                 if (result.Image == null)
                 {

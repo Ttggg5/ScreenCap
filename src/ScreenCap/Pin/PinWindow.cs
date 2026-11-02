@@ -91,7 +91,11 @@ internal sealed class PinWindow : Window
             SetHidden(false); // a new pin should be seen, along with the others
         OpenPins.Add(pin);
         pin.Closing += (_, _) => pin.Remember();
-        pin.Closed += (_, _) => OpenPins.Remove(pin);
+        pin.Closed += (_, _) =>
+        {
+            OpenPins.Remove(pin);
+            MemoryRelease.Schedule();
+        };
         pin.Show();
         pin.Activate();
     }

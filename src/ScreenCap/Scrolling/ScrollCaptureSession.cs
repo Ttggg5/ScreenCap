@@ -87,6 +87,7 @@ internal static class ScrollCaptureSession
             bar.Close();
             SetCursorPos(savedCursor.X, savedCursor.Y);
             IsActive = false;
+            MemoryRelease.Schedule(); // the scrolled frames
         }
 
         if (_cancel || stitcher == null)
