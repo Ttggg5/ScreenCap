@@ -156,8 +156,13 @@ internal static class CaptureSession
         }
     }
 
+    /// <summary>Results that are screenshots, kept in the history; recognizing text or codes is not.</summary>
+    private static readonly OverlayAction[] KeptActions = [OverlayAction.Copy, OverlayAction.Save, OverlayAction.QuickSave, OverlayAction.Pin];
+
     private static void HandleResult(OverlayResult result)
     {
+        if (result.Image != null && KeptActions.Contains(result.Action))
+            _ = ScreenshotHistory.AddAsync(result.Image, result.Title);
         if (result.Action == OverlayAction.Record)
             RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height), result.Title);
         else if (result.Action == OverlayAction.ScrollCapture)

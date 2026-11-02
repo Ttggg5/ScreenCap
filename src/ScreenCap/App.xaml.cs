@@ -1,5 +1,6 @@
 using System.Windows;
 using ScreenCap.Capture;
+using ScreenCap.History;
 using ScreenCap.Pin;
 using ScreenCap.Recording;
 using ScreenCap.Services;
@@ -34,6 +35,7 @@ public partial class App : Application
             Capture: () => CaptureSession.Start(),
             DelayedCapture: CaptureSession.StartDelayed,
             ReopenLast: CaptureSession.ReopenLast,
+            History: HistoryWindow.ShowWindow,
             Ocr: StartOcr,
             Barcode: StartBarcode,
             ToggleRecording: ToggleRecording,
@@ -93,6 +95,8 @@ public partial class App : Application
             failed.Add($"{AppSettings.PinHotkey}（貼圖）");
         if (!_hotkeys.Register(AppSettings.ReopenHotkey, CaptureSession.ReopenLast))
             failed.Add($"{AppSettings.ReopenHotkey}（再次開啟上一張截圖）");
+        if (!_hotkeys.Register(AppSettings.HistoryHotkey, HistoryWindow.ShowWindow))
+            failed.Add($"{AppSettings.HistoryHotkey}（截圖歷史庫）");
         if (!_hotkeys.Register(AppSettings.OcrHotkey, StartOcr))
             failed.Add($"{AppSettings.OcrHotkey}（截圖辨識文字）");
         if (!_hotkeys.Register(AppSettings.BarcodeHotkey, StartBarcode))

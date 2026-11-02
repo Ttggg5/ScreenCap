@@ -16,6 +16,7 @@ internal sealed class SettingsWindow : Window
     private readonly HotkeyBox _record = new(AppSettings.RecordHotkey);
     private readonly HotkeyBox _pin = new(AppSettings.PinHotkey);
     private readonly HotkeyBox _reopen = new(AppSettings.ReopenHotkey);
+    private readonly HotkeyBox _history = new(AppSettings.HistoryHotkey);
     private readonly HotkeyBox _ocr = new(AppSettings.OcrHotkey);
     private readonly HotkeyBox _barcode = new(AppSettings.BarcodeHotkey);
     private readonly TextBox _folder = new() { IsReadOnly = true, VerticalContentAlignment = VerticalAlignment.Center };
@@ -30,6 +31,7 @@ internal sealed class SettingsWindow : Window
     private readonly CheckBox _copyPath = new() { Content = "存檔後複製檔案路徑", IsChecked = AppSettings.CopyPathAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly CheckBox _reveal = new() { Content = "存檔後在檔案總管中顯示檔案", IsChecked = AppSettings.RevealAfterSave, Margin = new Thickness(0, 6, 0, 0) };
     private readonly ComboBox _confirm = new();
+    private readonly ComboBox _historyLimit = new();
 
     public SettingsWindow()
     {
@@ -49,6 +51,10 @@ internal sealed class SettingsWindow : Window
         foreach (var action in AppSettings.ConfirmActions)
             _confirm.Items.Add(new ComboBoxItem { Content = ConfirmName(action), Tag = action });
         _confirm.SelectedIndex = Array.IndexOf(AppSettings.ConfirmActions, AppSettings.ConfirmAction);
+        var limits = AppSettings.HistoryLimits.Union([AppSettings.HistoryLimit]).Order().ToList();
+        foreach (int limit in limits)
+            _historyLimit.Items.Add(new ComboBoxItem { Content = limit == 0 ? "不保留" : $"最近 {limit} 張", Tag = limit });
+        _historyLimit.SelectedIndex = limits.IndexOf(AppSettings.HistoryLimit);
 
         var body = new StackPanel { Margin = new Thickness(24, 16, 24, 20) };
 
@@ -58,6 +64,7 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Row("錄製螢幕", _record));
         body.Children.Add(Row("剪貼簿貼為貼圖", _pin));
         body.Children.Add(Row("再次開啟上一張截圖", _reopen));
+        body.Children.Add(Row("截圖歷史庫", _history));
         body.Children.Add(Row("截圖辨識文字", _ocr));
         body.Children.Add(Row("截圖辨識 QR Code", _barcode));
 
@@ -80,6 +87,8 @@ internal sealed class SettingsWindow : Window
 
         body.Children.Add(Heading("截圖"));
         body.Children.Add(Row("Enter / 雙擊選區", _confirm));
+        body.Children.Add(Row("截圖歷史庫", _historyLimit));
+        body.Children.Add(Hint("複製、存檔或貼到桌面的截圖會自動保留一份，可從系統匣選單的「截圖歷史庫」找回。超過張數時刪除最舊的；改成「不保留」會刪除已保留的截圖。"));
 
         body.Children.Add(Heading("一般"));
         body.Children.Add(Row("外觀", _theme));
@@ -160,6 +169,7 @@ internal sealed class SettingsWindow : Window
         _record.Hotkey = AppSettings.DefaultRecordHotkey;
         _pin.Hotkey = AppSettings.DefaultPinHotkey;
         _reopen.Hotkey = AppSettings.DefaultReopenHotkey;
+        _history.Hotkey = AppSettings.DefaultHistoryHotkey;
         _ocr.Hotkey = AppSettings.DefaultOcrHotkey;
         _barcode.Hotkey = AppSettings.DefaultBarcodeHotkey;
         _folder.Text = AppSettings.DefaultSaveFolder;
@@ -172,21 +182,31 @@ internal sealed class SettingsWindow : Window
         _copyPath.IsChecked = false;
         _reveal.IsChecked = false;
         _confirm.SelectedIndex = 0;
+        _historyLimit.SelectedItem = _historyLimit.Items.Cast<ComboBoxItem>().First(i => (int)i.Tag == AppSettings.DefaultHistoryLimit);
     }
 
     private void Apply()
     {
-        var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey, _reopen.Hotkey, _ocr.Hotkey, _barcode.Hotkey }.Where(k => !k.IsNone).ToList();
+        var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey, _reopen.Hotkey, _history.Hotkey, _ocr.Hotkey, _barcode.Hotkey }.Where(k => !k.IsNone).ToList();
         if (keys.Distinct().Count() != keys.Count)
         {
             MessageBox.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        int historyLimit = (int)((ComboBoxItem)_historyLimit.SelectedItem).Tag;
+        int kept = ScreenshotHistory.Entries.Count;
+        if (historyLimit < kept
+            && MessageBox.Show(this, historyLimit == 0
+                    ? $"不保留截圖歷史會刪除歷史庫中的 {kept} 張截圖。要繼續嗎？"
+                    : $"歷史庫中有 {kept} 張截圖，改成保留 {historyLimit} 張會刪除最舊的 {kept - historyLimit} 張。要繼續嗎？",
+                "ScreenCap", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) != MessageBoxResult.OK)
+            return;
 
         AppSettings.CaptureHotkey = _capture.Hotkey;
         AppSettings.RecordHotkey = _record.Hotkey;
         AppSettings.PinHotkey = _pin.Hotkey;
         AppSettings.ReopenHotkey = _reopen.Hotkey;
+        AppSettings.HistoryHotkey = _history.Hotkey;
         AppSettings.OcrHotkey = _ocr.Hotkey;
         AppSettings.BarcodeHotkey = _barcode.Hotkey;
         AppSettings.SaveFolder = _folder.Text;
@@ -198,6 +218,8 @@ internal sealed class SettingsWindow : Window
         AppSettings.CopyPathAfterSave = _copyPath.IsChecked == true;
         AppSettings.RevealAfterSave = _reveal.IsChecked == true;
         AppSettings.ConfirmAction = (Capture.OverlayAction)((ComboBoxItem)_confirm.SelectedItem).Tag;
+        AppSettings.HistoryLimit = historyLimit;
+        ScreenshotHistory.Trim();
         var theme = (AppTheme)((ComboBoxItem)_theme.SelectedItem).Tag;
         if (theme != AppSettings.Theme)
         {

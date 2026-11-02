@@ -12,6 +12,7 @@ internal sealed record TrayActions(
     Action Capture,
     Action<int> DelayedCapture,
     Action ReopenLast,
+    Action History,
     Action Ocr,
     Action Barcode,
     Action ToggleRecording,
@@ -101,6 +102,10 @@ internal sealed class TrayIconHost : IDisposable
             reopen.Enabled = Capture.CaptureSession.CanReopen;
         };
         menu.Items.Add(reopen);
+        var history = new Forms.ToolStripMenuItem();
+        history.Click += (_, _) => actions.History();
+        menu.Opening += (_, _) => history.Text = WithHotkey("截圖歷史庫", AppSettings.HistoryHotkey);
+        menu.Items.Add(history);
         var ocr = new Forms.ToolStripMenuItem();
         ocr.Click += async (_, _) =>
         {

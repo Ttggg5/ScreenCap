@@ -73,6 +73,7 @@ internal static class AppSettings
     public static readonly Hotkey DefaultReopenHotkey = new(ModifierKeys.Control | ModifierKeys.Shift, Key.F1);
     public static readonly Hotkey DefaultOcrHotkey = new(ModifierKeys.Control | ModifierKeys.Alt, Key.F1);
     public static readonly Hotkey DefaultBarcodeHotkey = new(ModifierKeys.Control | ModifierKeys.Alt, Key.F2);
+    public static readonly Hotkey DefaultHistoryHotkey = new(ModifierKeys.Control | ModifierKeys.Shift, Key.F2);
 
     public static string DefaultSaveFolder => Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
 
@@ -112,6 +113,23 @@ internal static class AppSettings
     {
         get => Hotkey.Deserialize(Get("BarcodeHotkey")) ?? DefaultBarcodeHotkey;
         set => Set("BarcodeHotkey", value.Serialize());
+    }
+
+    /// <summary>Opens the screenshot history.</summary>
+    public static Hotkey HistoryHotkey
+    {
+        get => Hotkey.Deserialize(Get("HistoryHotkey")) ?? DefaultHistoryHotkey;
+        set => Set("HistoryHotkey", value.Serialize());
+    }
+
+    public const int DefaultHistoryLimit = 100;
+    public static readonly int[] HistoryLimits = [0, 20, 50, 100, 200, 500];
+
+    /// <summary>How many recent screenshots the history keeps; 0 turns it off.</summary>
+    public static int HistoryLimit
+    {
+        get => int.TryParse(Get("HistoryLimit"), out int limit) && limit >= 0 ? limit : DefaultHistoryLimit;
+        set => Set("HistoryLimit", value.ToString(CultureInfo.InvariantCulture));
     }
 
     /// <summary>Where quick save writes, and where save dialogs start. Falls back to Pictures if it no longer exists.</summary>
