@@ -269,6 +269,75 @@ internal sealed class ArrowAnnotation(Point start, Color color, double size, dou
     }
 }
 
+/// <summary>A dimension line: short ticks at both ends and the distance in pixels written in the middle.</summary>
+internal sealed class MeasureAnnotation(Point start, Color color, double size, double scale)
+    : LineAnnotation(start, color, size, scale)
+{
+    public override bool CanDash => false; // dashed ticks would be hard to read
+
+    private double TickLength => Math.Max(5 * Scale, Thickness * 2.5);
+
+    /// <summary>"120 px" along an axis; a slanted line adds its width, height and angle: "144 px (120 × 80, 34°)".</summary>
+    internal static string Label(Vector v)
+    {
+        double dx = Math.Abs(Math.Round(v.X)), dy = Math.Abs(Math.Round(v.Y));
+        double length = Math.Round(Math.Sqrt(dx * dx + dy * dy));
+        if (dx == 0 || dy == 0)
+            return string.Create(CultureInfo.InvariantCulture, $"{length:0} px");
+        double angle = Math.Atan2(dy, dx) * 180 / Math.PI;
+        return string.Create(CultureInfo.InvariantCulture, $"{length:0} px ({dx:0} × {dy:0}, {angle:0}°)");
+    }
+
+    /// <summary>The label text and its box, centered on the line.</summary>
+    private (FormattedText Text, Rect Box) LabelLayout()
+    {
+        var text = new FormattedText(Label(End - Start), CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+            new Typeface(TextAnnotation.Font, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+            (11 + Size) * Scale, new SolidColorBrush(TextAnnotation.ContrastColor(Color)), 1.0);
+        double padX = 5 * Scale, padY = 1.5 * Scale;
+        double w = text.Width + 2 * padX, h = text.Height + 2 * padY;
+        var mid = Start + (End - Start) / 2;
+        return (text, new Rect(mid.X - w / 2, mid.Y - h / 2, w, h));
+    }
+
+    public override Rect Bounds
+    {
+        get
+        {
+            var line = new Rect(Start, End);
+            line.Inflate(TickLength, TickLength);
+            line.Union(LabelLayout().Box);
+            return line;
+        }
+    }
+
+    public override bool HitTest(Point point, double tolerance)
+    {
+        var box = LabelLayout().Box;
+        box.Inflate(tolerance, tolerance);
+        return box.Contains(point) || base.HitTest(point, tolerance);
+    }
+
+    protected override void Render(DrawingContext dc)
+    {
+        var v = End - Start;
+        if (v.Length < 1)
+            return;
+        var pen = CreatePen();
+        dc.DrawLine(pen, Start, End);
+        var tick = new Vector(-v.Y, v.X);
+        tick.Normalize();
+        tick *= TickLength;
+        dc.DrawLine(pen, Start - tick, Start + tick);
+        dc.DrawLine(pen, End - tick, End + tick);
+
+        // The label sits on the line, like a dimension in a drawing.
+        var (text, box) = LabelLayout();
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color), null, box, 3 * Scale, 3 * Scale);
+        dc.DrawText(text, new Point(box.X + (box.Width - text.Width) / 2, box.Y + (box.Height - text.Height) / 2));
+    }
+}
+
 internal class PenAnnotation : Annotation
 {
     private List<Point> _points = new();

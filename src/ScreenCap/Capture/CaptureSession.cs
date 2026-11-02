@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Media.Imaging;
 using ScreenCap.Annotations;
+using ScreenCap.Barcode;
 using ScreenCap.Ocr;
 using ScreenCap.Pin;
 using ScreenCap.Recording;
@@ -82,8 +83,8 @@ internal static class CaptureSession
         countdown.Closed += (_, _) => _countingDown = false; // finished or cancelled by a click
     }
 
-    /// <param name="recordMode">Select a region to record instead of taking a screenshot.</param>
-    public static void Start(bool recordMode = false)
+    /// <param name="mode">Capture, or select a region to record or to recognize text in.</param>
+    public static void Start(OverlayMode mode = OverlayMode.Capture)
     {
         if (IsActive || RecordingSession.IsActive || ScrollCaptureSession.IsActive)
             return;
@@ -92,7 +93,7 @@ internal static class CaptureSession
         {
             var snapshot = ScreenCaptureService.CaptureVirtualScreen(AppSettings.CaptureCursor);
             var detector = WindowDetector.Snapshot(snapshot);
-            Show(new OverlayWindow(snapshot, detector, recordMode ? OverlayMode.Record : OverlayMode.Capture), snapshot, detector);
+            Show(new OverlayWindow(snapshot, detector, mode), snapshot, detector);
         }
         catch
         {
@@ -185,6 +186,15 @@ internal static class CaptureSession
                 break;
             case OverlayAction.Ocr:
                 OcrResultWindow.ShowFor(result.Image);
+                break;
+            case OverlayAction.QuickOcr:
+                QuickOcr.Run(result.Image);
+                break;
+            case OverlayAction.Barcode:
+                BarcodeResultWindow.ShowFor(result.Image);
+                break;
+            case OverlayAction.QuickBarcode:
+                QuickBarcode.Run(result.Image);
                 break;
         }
     }

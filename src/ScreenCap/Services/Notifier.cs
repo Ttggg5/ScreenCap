@@ -8,4 +8,13 @@ internal static class Notifier
 
     /// <param name="onClick">Run if the user clicks the notification.</param>
     public static void Show(string message, Action? onClick = null) => Handler?.Invoke("ScreenCap", message, onClick);
+
+    private const int PreviewLength = 60;
+
+    /// <summary>The start of <paramref name="text"/> on one line, short enough for a notification.</summary>
+    public static string Preview(string text)
+    {
+        string line = string.Join(" ", text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        return line.Length <= PreviewLength ? line : line[..PreviewLength] + "…";
+    }
 }

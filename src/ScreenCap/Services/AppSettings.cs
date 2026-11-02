@@ -71,6 +71,8 @@ internal static class AppSettings
     public static readonly Hotkey DefaultRecordHotkey = new(ModifierKeys.Shift, Key.F1);
     public static readonly Hotkey DefaultPinHotkey = new(ModifierKeys.None, Key.F3);
     public static readonly Hotkey DefaultReopenHotkey = new(ModifierKeys.Control | ModifierKeys.Shift, Key.F1);
+    public static readonly Hotkey DefaultOcrHotkey = new(ModifierKeys.Control | ModifierKeys.Alt, Key.F1);
+    public static readonly Hotkey DefaultBarcodeHotkey = new(ModifierKeys.Control | ModifierKeys.Alt, Key.F2);
 
     public static string DefaultSaveFolder => Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
 
@@ -96,6 +98,20 @@ internal static class AppSettings
     {
         get => Hotkey.Deserialize(Get("ReopenHotkey")) ?? DefaultReopenHotkey;
         set => Set("ReopenHotkey", value.Serialize());
+    }
+
+    /// <summary>Select a region and copy the text in it, skipping the editor.</summary>
+    public static Hotkey OcrHotkey
+    {
+        get => Hotkey.Deserialize(Get("OcrHotkey")) ?? DefaultOcrHotkey;
+        set => Set("OcrHotkey", value.Serialize());
+    }
+
+    /// <summary>Select a region and copy the QR code or barcode in it, skipping the editor.</summary>
+    public static Hotkey BarcodeHotkey
+    {
+        get => Hotkey.Deserialize(Get("BarcodeHotkey")) ?? DefaultBarcodeHotkey;
+        set => Set("BarcodeHotkey", value.Serialize());
     }
 
     /// <summary>Where quick save writes, and where save dialogs start. Falls back to Pictures if it no longer exists.</summary>

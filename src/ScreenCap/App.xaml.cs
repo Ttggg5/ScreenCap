@@ -34,6 +34,8 @@ public partial class App : Application
             Capture: () => CaptureSession.Start(),
             DelayedCapture: CaptureSession.StartDelayed,
             ReopenLast: CaptureSession.ReopenLast,
+            Ocr: StartOcr,
+            Barcode: StartBarcode,
             ToggleRecording: ToggleRecording,
             PinFromClipboard: PinFromClipboard,
             CloseAllPins: PinWindow.CloseAll,
@@ -91,6 +93,10 @@ public partial class App : Application
             failed.Add($"{AppSettings.PinHotkey}（貼圖）");
         if (!_hotkeys.Register(AppSettings.ReopenHotkey, CaptureSession.ReopenLast))
             failed.Add($"{AppSettings.ReopenHotkey}（再次開啟上一張截圖）");
+        if (!_hotkeys.Register(AppSettings.OcrHotkey, StartOcr))
+            failed.Add($"{AppSettings.OcrHotkey}（截圖辨識文字）");
+        if (!_hotkeys.Register(AppSettings.BarcodeHotkey, StartBarcode))
+            failed.Add($"{AppSettings.BarcodeHotkey}（截圖辨識 QR Code）");
         return failed;
     }
 
@@ -122,8 +128,14 @@ public partial class App : Application
         if (RecordingSession.IsActive)
             RecordingSession.Stop();
         else
-            CaptureSession.Start(recordMode: true);
+            CaptureSession.Start(OverlayMode.Record);
     }
+
+    /// <summary>Select a region and copy the text in it, without the editor.</summary>
+    private static void StartOcr() => CaptureSession.Start(OverlayMode.Ocr);
+
+    /// <summary>Select a region and copy the QR code or barcode in it, without the editor.</summary>
+    private static void StartBarcode() => CaptureSession.Start(OverlayMode.Barcode);
 
     /// <summary>Pins the clipboard image; text is pinned as an image too, and color codes as a swatch.</summary>
     private void PinFromClipboard()

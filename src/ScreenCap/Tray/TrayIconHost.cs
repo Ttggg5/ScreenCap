@@ -12,6 +12,8 @@ internal sealed record TrayActions(
     Action Capture,
     Action<int> DelayedCapture,
     Action ReopenLast,
+    Action Ocr,
+    Action Barcode,
     Action ToggleRecording,
     Action PinFromClipboard,
     Action CloseAllPins,
@@ -99,6 +101,22 @@ internal sealed class TrayIconHost : IDisposable
             reopen.Enabled = Capture.CaptureSession.CanReopen;
         };
         menu.Items.Add(reopen);
+        var ocr = new Forms.ToolStripMenuItem();
+        ocr.Click += async (_, _) =>
+        {
+            await Task.Delay(250); // let the menu disappear first
+            actions.Ocr();
+        };
+        menu.Opening += (_, _) => ocr.Text = WithHotkey("截圖辨識文字", AppSettings.OcrHotkey);
+        menu.Items.Add(ocr);
+        var barcode = new Forms.ToolStripMenuItem();
+        barcode.Click += async (_, _) =>
+        {
+            await Task.Delay(250); // let the menu disappear first
+            actions.Barcode();
+        };
+        menu.Opening += (_, _) => barcode.Text = WithHotkey("截圖辨識 QR Code", AppSettings.BarcodeHotkey);
+        menu.Items.Add(barcode);
         menu.Items.Add(record);
         menu.Items.Add(pause);
         menu.Items.Add(pin);

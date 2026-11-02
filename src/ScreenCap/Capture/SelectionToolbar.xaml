@@ -129,6 +129,11 @@
                         <Line X1="2" Y1="14" X2="14" Y2="2" Width="16" Height="16" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
                     </ToggleButton>
+                    <ToggleButton x:Name="MeasureTool" Style="{StaticResource ToolToggle}" ToolTip="量測：拖曳量出兩點間的距離（像素）" Click="OnToolClick">
+                        <Path Data="M 1.5,4.5 V 11.5 M 1.5,8 H 16.5 M 16.5,4.5 V 11.5" Width="18" Height="16" StrokeThickness="1.6"
+                              StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                    </ToggleButton>
                     <ToggleButton x:Name="PolylineTool" Style="{StaticResource ToolToggle}" ToolTip="折線：逐點點擊，雙擊或 Enter 結束" Click="OnToolClick">
                         <Polyline Points="1.5,13 6,4.5 10.5,10.5 15,2.5" Width="17" Height="16" StrokeThickness="1.6" StrokeLineJoin="Round"
                                   StrokeStartLineCap="Round" StrokeEndLineCap="Round"
@@ -165,6 +170,7 @@
                     <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
                     <Rectangle Style="{StaticResource Divider}" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="文字辨識 (OCR)" Content="&#xE8AC;" Click="OnOcr" />
+                    <Button Style="{StaticResource ToolButton}" ToolTip="辨識 QR Code / 條碼" Content="&#xED14;" Click="OnBarcode" />
                     <Button x:Name="PinButton" Style="{StaticResource ToolButton}" ToolTip="貼到桌面 (Ctrl+T)" Content="&#xE718;" Click="OnPin" />
                     <Button x:Name="SaveButton" Style="{StaticResource ToolButton}" ToolTip="另存新檔 (Ctrl+S)" Content="&#xE74E;" Click="OnSave" />
                     <Button x:Name="ScrollCaptureButton" Style="{StaticResource ToolButton}" ToolTip="長截圖：自動捲動並拼接" Content="&#xECE7;" Click="OnScrollCapture" />

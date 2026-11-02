@@ -16,6 +16,7 @@ internal enum ToolKind
     Ellipse,
     Arrow,
     Line,
+    Measure,
     Polyline,
     Pen,
     Highlighter,
@@ -37,6 +38,7 @@ internal readonly record struct SizeRange(double Min, double Max, double Default
         ToolKind.Number => new(16, 64, 32, "大小"),   // circle diameter
         ToolKind.Text or ToolKind.Callout => new(8, 96, 20, "大小"), // font size
         ToolKind.Magnifier => new(2, 8, 2, "倍率"),   // zoom factor
+        ToolKind.Measure => new(1, 10, 2, "粗細"),   // thin, so it doesn't hide what is measured
         _ => new(1, 20, 4, "粗細"),                  // stroke width
     };
 }
@@ -55,6 +57,7 @@ internal partial class SelectionToolbar : UserControl
             [EllipseTool] = ToolKind.Ellipse,
             [ArrowTool] = ToolKind.Arrow,
             [LineTool] = ToolKind.Line,
+            [MeasureTool] = ToolKind.Measure,
             [PolylineTool] = ToolKind.Polyline,
             [PenTool] = ToolKind.Pen,
             [HighlighterTool] = ToolKind.Highlighter,
@@ -158,6 +161,7 @@ internal partial class SelectionToolbar : UserControl
     public event Action? CancelRequested;
     public event Action? RecordRequested;
     public event Action? OcrRequested;
+    public event Action? BarcodeRequested;
     public event Action? ScrollCaptureRequested;
 
     /// <summary>Raised with true for blur, false for mosaic blocks.</summary>
@@ -527,5 +531,6 @@ internal partial class SelectionToolbar : UserControl
     private void OnCancel(object sender, RoutedEventArgs e) => CancelRequested?.Invoke();
     private void OnRecord(object sender, RoutedEventArgs e) => RecordRequested?.Invoke();
     private void OnOcr(object sender, RoutedEventArgs e) => OcrRequested?.Invoke();
+    private void OnBarcode(object sender, RoutedEventArgs e) => BarcodeRequested?.Invoke();
     private void OnScrollCapture(object sender, RoutedEventArgs e) => ScrollCaptureRequested?.Invoke();
 }

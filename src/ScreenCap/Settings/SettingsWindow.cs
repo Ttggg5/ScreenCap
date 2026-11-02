@@ -16,6 +16,8 @@ internal sealed class SettingsWindow : Window
     private readonly HotkeyBox _record = new(AppSettings.RecordHotkey);
     private readonly HotkeyBox _pin = new(AppSettings.PinHotkey);
     private readonly HotkeyBox _reopen = new(AppSettings.ReopenHotkey);
+    private readonly HotkeyBox _ocr = new(AppSettings.OcrHotkey);
+    private readonly HotkeyBox _barcode = new(AppSettings.BarcodeHotkey);
     private readonly TextBox _folder = new() { IsReadOnly = true, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly TextBox _pattern = new() { Text = AppSettings.FileNamePattern, VerticalContentAlignment = VerticalAlignment.Center };
     private readonly TextBlock _patternPreview = Hint("");
@@ -56,6 +58,8 @@ internal sealed class SettingsWindow : Window
         body.Children.Add(Row("錄製螢幕", _record));
         body.Children.Add(Row("剪貼簿貼為貼圖", _pin));
         body.Children.Add(Row("再次開啟上一張截圖", _reopen));
+        body.Children.Add(Row("截圖辨識文字", _ocr));
+        body.Children.Add(Row("截圖辨識 QR Code", _barcode));
 
         body.Children.Add(Heading("存檔"));
         body.Children.Add(Hint("另存新檔的預設位置；截圖時按 Ctrl+Shift+S 會直接存成 PNG 到這裡。"));
@@ -156,6 +160,8 @@ internal sealed class SettingsWindow : Window
         _record.Hotkey = AppSettings.DefaultRecordHotkey;
         _pin.Hotkey = AppSettings.DefaultPinHotkey;
         _reopen.Hotkey = AppSettings.DefaultReopenHotkey;
+        _ocr.Hotkey = AppSettings.DefaultOcrHotkey;
+        _barcode.Hotkey = AppSettings.DefaultBarcodeHotkey;
         _folder.Text = AppSettings.DefaultSaveFolder;
         _pattern.Text = FileNameTemplate.Default;
         _theme.SelectedIndex = (int)AppTheme.System;
@@ -170,7 +176,7 @@ internal sealed class SettingsWindow : Window
 
     private void Apply()
     {
-        var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey, _reopen.Hotkey }.Where(k => !k.IsNone).ToList();
+        var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey, _reopen.Hotkey, _ocr.Hotkey, _barcode.Hotkey }.Where(k => !k.IsNone).ToList();
         if (keys.Distinct().Count() != keys.Count)
         {
             MessageBox.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -181,6 +187,8 @@ internal sealed class SettingsWindow : Window
         AppSettings.RecordHotkey = _record.Hotkey;
         AppSettings.PinHotkey = _pin.Hotkey;
         AppSettings.ReopenHotkey = _reopen.Hotkey;
+        AppSettings.OcrHotkey = _ocr.Hotkey;
+        AppSettings.BarcodeHotkey = _barcode.Hotkey;
         AppSettings.SaveFolder = _folder.Text;
         AppSettings.FileNamePattern = Pattern;
         AppSettings.CaptureCursor = _cursor.IsChecked == true;

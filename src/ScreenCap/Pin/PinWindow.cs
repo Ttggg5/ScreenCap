@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using ScreenCap.Capture;
+using ScreenCap.Barcode;
 using ScreenCap.Ocr;
 using ScreenCap.Services;
 using static ScreenCap.Native.NativeMethods;
@@ -173,6 +174,7 @@ internal sealed class PinWindow : Window
         var menu = new ContextMenu();
         menu.Items.Add(MenuItem("編輯標註", "Space", EditAnnotations));
         menu.Items.Add(MenuItem("文字辨識", "O", () => OcrResultWindow.ShowFor(_image)));
+        menu.Items.Add(MenuItem("辨識 QR Code / 條碼", "Q", () => BarcodeResultWindow.ShowFor(_image)));
         menu.Items.Add(MenuItem("複製", "Ctrl+C", Copy));
         menu.Items.Add(MenuItem("另存新檔…", "Ctrl+S", Save));
         menu.Items.Add(MenuItem("快速存檔", "Ctrl+Shift+S", () => CaptureSession.QuickSave(_image, _title)));
@@ -320,6 +322,9 @@ internal sealed class PinWindow : Window
                 break;
             case Key.O when !ctrl:
                 OcrResultWindow.ShowFor(_image);
+                break;
+            case Key.Q when !ctrl:
+                BarcodeResultWindow.ShowFor(_image);
                 break;
             case Key.X when !ctrl:
                 SetClickThrough(true);

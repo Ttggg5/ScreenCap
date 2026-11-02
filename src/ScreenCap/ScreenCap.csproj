@@ -33,4 +33,8 @@
     <InternalsVisibleTo Include="ScreenCap.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+  </ItemGroup>
+
 </Project>

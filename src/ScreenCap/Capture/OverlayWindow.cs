@@ -24,6 +24,15 @@ internal enum OverlayAction
     QuickSave,
     Ocr,
     ScrollCapture,
+
+    /// <summary>Recognize the text and copy it right away, without the result window.</summary>
+    QuickOcr,
+
+    /// <summary>Show the QR codes and barcodes in the selection.</summary>
+    Barcode,
+
+    /// <summary>Decode the QR code or barcode and copy it right away, without the result window.</summary>
+    QuickBarcode,
 }
 
 internal enum OverlayMode
@@ -36,6 +45,12 @@ internal enum OverlayMode
 
     /// <summary>Annotating an existing pin; the selection starts on the pinned image.</summary>
     EditPin,
+
+    /// <summary>Selecting a region to recognize text in; finishes as soon as a region is chosen.</summary>
+    Ocr,
+
+    /// <summary>Selecting a region to decode a QR code or barcode in; finishes as soon as a region is chosen.</summary>
+    Barcode,
 }
 
 /// <param name="Width">Selection size in physical pixels (used for recording).</param>
@@ -384,6 +399,7 @@ internal sealed class OverlayWindow : Window
         };
         _toolbar.RecordRequested += () => Finish(OverlayAction.Record);
         _toolbar.OcrRequested += () => Finish(OverlayAction.Ocr);
+        _toolbar.BarcodeRequested += () => Finish(OverlayAction.Barcode);
         _toolbar.ScrollCaptureRequested += () => Finish(OverlayAction.ScrollCapture);
         if (_mode == OverlayMode.Record)
             _toolbar.SetRecordMode();
@@ -622,12 +638,14 @@ internal sealed class OverlayWindow : Window
             case State.Pressing:
                 // A click without dragging accepts the auto-detected window.
                 _state = HasSelection ? State.Selected : State.Detecting;
+                FinishQuickSelection();
                 break;
 
             case State.Selecting:
                 _state = _sel.Width >= 2 && _sel.Height >= 2 ? State.Selected : State.Detecting;
                 if (_state == State.Detecting)
                     DetectAt(_cursor);
+                FinishQuickSelection();
                 break;
 
             case State.Moving:
@@ -937,6 +955,22 @@ internal sealed class OverlayWindow : Window
         _state = State.Selected;
         UpdateSelectedCursor(_cursor);
         Refresh();
+        FinishQuickSelection();
+    }
+
+    /// <summary>The action of the text and QR code hotkeys; null in modes where the selection can be edited.</summary>
+    private OverlayAction? QuickAction => _mode switch
+    {
+        OverlayMode.Ocr => OverlayAction.QuickOcr,
+        OverlayMode.Barcode => OverlayAction.QuickBarcode,
+        _ => null,
+    };
+
+    /// <summary>The text and QR code hotkeys have nothing to edit: act as soon as a region is chosen.</summary>
+    private void FinishQuickSelection()
+    {
+        if (QuickAction is { } action && _state == State.Selected)
+            Finish(action);
     }
 
     /// <summary>Jumps to an earlier (-1) or later (+1) capture region; past the newest goes back to detection.</summary>
@@ -1030,6 +1064,7 @@ internal sealed class OverlayWindow : Window
         ToolKind.Ellipse => new EllipseAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Arrow => new ArrowAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Line => new LineAnnotation(p, _color, SizeOf(_tool), _scale),
+        ToolKind.Measure => new MeasureAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Polyline => new PolylineAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Highlighter => new HighlighterAnnotation(p, _color, SizeOf(_tool), _scale),
         ToolKind.Number => new NumberAnnotation(p, NextNumber(), _color, SizeOf(_tool), _scale),
@@ -1047,6 +1082,7 @@ internal sealed class OverlayWindow : Window
         RectAnnotation => ToolKind.Rectangle,
         EllipseAnnotation => ToolKind.Ellipse,
         ArrowAnnotation => ToolKind.Arrow,
+        MeasureAnnotation => ToolKind.Measure,
         LineAnnotation => ToolKind.Line,
         PolylineAnnotation => ToolKind.Polyline,
         HighlighterAnnotation => ToolKind.Highlighter,
@@ -1429,6 +1465,10 @@ internal sealed class OverlayWindow : Window
         if (_mode != OverlayMode.EditPin)
             CaptureSession.AddHistory(new Int32Rect(x, y, (int)_sel.Width, (int)_sel.Height));
 
+        // Likewise, with the text and QR code hotkeys every confirm action recognizes.
+        if (QuickAction is { } quick)
+            action = quick;
+
         // In record mode every confirm action (Enter, double-click, ...) starts recording.
         if (_mode == OverlayMode.Record || action is OverlayAction.Record or OverlayAction.ScrollCapture)
         {
@@ -1484,7 +1524,9 @@ internal sealed class OverlayWindow : Window
         _sizeLabel.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
         if (has)
         {
-            _sizeText.Text = $"{_sel.Width:0} × {_sel.Height:0}";
+            string purpose = _mode switch { OverlayMode.Ocr => "文字辨識　", OverlayMode.Barcode => "QR Code / 條碼　", _ => "" };
+            _sizeText.Text = purpose + $"{_sel.Width:0} × {_sel.Height:0}"
+                + (QuickAction != null && _state == State.Selected ? "　按 Enter 辨識" : "");
             _sizeLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double labelH = _sizeLabel.DesiredSize.Height * _scale;
             double y = _sel.Y - labelH - 4 * _scale;
@@ -1508,7 +1550,7 @@ internal sealed class OverlayWindow : Window
         }
 
         // Toolbar
-        bool showToolbar = has && _state is State.Selected or State.Drawing or State.Polyline or State.CalloutPlacing or State.AnnotationMoving or State.AnnotationResizing;
+        bool showToolbar = has && QuickAction == null && _state is State.Selected or State.Drawing or State.Polyline or State.CalloutPlacing or State.AnnotationMoving or State.AnnotationResizing;
         _toolbar.Visibility = showToolbar ? Visibility.Visible : Visibility.Collapsed;
         if (showToolbar)
         {
