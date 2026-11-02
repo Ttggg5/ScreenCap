@@ -77,8 +77,9 @@ internal sealed class OverlayWindow : Window
 
     private readonly Canvas _root = new();
     private readonly ScaleTransform _chromeScale = new(1, 1);
-    private readonly RectangleGeometry _hole = new(new Rect());
-    private readonly RectangleGeometry _annotationClip = new(new Rect());
+    /// <summary>The selection shown undimmed: a box the size of the selection, painted with that part of the screen.</summary>
+    private readonly Rectangle _selectedView = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
+    private readonly ImageBrush _selectedBrush;
     private readonly Rectangle _border;
     private readonly Rectangle[] _handles = new Rectangle[8];
     private readonly AnnotationLayer _annotationLayer;
@@ -161,25 +162,32 @@ internal sealed class OverlayWindow : Window
         _root.HorizontalAlignment = HorizontalAlignment.Left;
         _root.VerticalAlignment = VerticalAlignment.Top;
 
+        // The screen dimmed, with the selection shown undimmed on top. Nothing full-screen changes when the
+        // selection moves, so only its old and new area are redrawn. Cutting a hole into a full-screen dim
+        // layer, or clipping a full-screen image, would redraw the whole screen on every mouse move, which
+        // is slow with software rendering.
         var background = new Image { Source = snap.Bitmap, Width = snap.Width, Height = snap.Height, Stretch = Stretch.Fill };
         RenderOptions.SetBitmapScalingMode(background, BitmapScalingMode.NearestNeighbor);
         _root.Children.Add(background);
+        _root.Children.Add(new Rectangle
+        {
+            Width = snap.Width,
+            Height = snap.Height,
+            Fill = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
+            IsHitTestVisible = false,
+        });
+        _selectedBrush = new ImageBrush(snap.Bitmap) { ViewboxUnits = BrushMappingMode.Absolute, Stretch = Stretch.Fill };
+        RenderOptions.SetBitmapScalingMode(_selectedBrush, BitmapScalingMode.NearestNeighbor);
+        _selectedView.Fill = _selectedBrush;
+        _root.Children.Add(_selectedView);
 
         _annotationLayer = new AnnotationLayer(_annotations.Items)
         {
             Width = snap.Width,
             Height = snap.Height,
             IsHitTestVisible = false,
-            Clip = _annotationClip,
         };
         _root.Children.Add(_annotationLayer);
-
-        _root.Children.Add(new Path
-        {
-            Fill = new SolidColorBrush(Color.FromArgb(0x80, 0, 0, 0)),
-            Data = new CombinedGeometry(GeometryCombineMode.Exclude, new RectangleGeometry(new Rect(0, 0, snap.Width, snap.Height)), _hole),
-            IsHitTestVisible = false,
-        });
 
         _adorner.Width = snap.Width;
         _adorner.Height = snap.Height;
@@ -469,7 +477,7 @@ internal sealed class OverlayWindow : Window
                 polyline.AddPoint();
                 _press = p;
                 _polylinePressed = true;
-                _annotationLayer.InvalidateVisual();
+                _annotationLayer.RedrawCurrent();
                 break;
 
             case State.Selected:
@@ -590,7 +598,7 @@ internal sealed class OverlayWindow : Window
             case State.Polyline:
             case State.CalloutPlacing:
                 _drawing?.Update(p, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
-                _annotationLayer.InvalidateVisual();
+                _annotationLayer.RedrawCurrent();
                 break;
 
             case State.AnnotationMoving:
@@ -622,7 +630,7 @@ internal sealed class OverlayWindow : Window
         if (_state is not (State.Drawing or State.Polyline) || _drawing == null)
             return;
         _drawing.Update(_cursor, Keyboard.Modifiers.HasFlag(ModifierKeys.Shift));
-        _annotationLayer.InvalidateVisual();
+        _annotationLayer.RedrawCurrent();
     }
 
     protected override void OnPreviewKeyUp(KeyEventArgs e)
@@ -673,7 +681,7 @@ internal sealed class OverlayWindow : Window
                 if ((polyline.Preview is { } end ? (end - _press).Length : 0) > DragThreshold)
                 {
                     polyline.AddPoint();
-                    _annotationLayer.InvalidateVisual();
+                    _annotationLayer.RedrawCurrent();
                 }
                 break;
 
@@ -816,7 +824,7 @@ internal sealed class OverlayWindow : Window
             case Key.Back or Key.Delete when _state == State.Polyline && _drawing is PolylineAnnotation polyline:
                 polyline.RemoveLastPoint();
                 polyline.Update(_cursor, shift);
-                _annotationLayer.InvalidateVisual();
+                _annotationLayer.RedrawCurrent();
                 break;
             case Key.D when ctrl && _selected != null && selected:
                 Duplicate(_selected);
@@ -1117,7 +1125,7 @@ internal sealed class OverlayWindow : Window
 
     private void InvalidateAnnotations()
     {
-        _annotationLayer.InvalidateVisual();
+        _annotationLayer.Redraw();
         _adorner.InvalidateVisual();
     }
 
@@ -1500,8 +1508,16 @@ internal sealed class OverlayWindow : Window
     private void Refresh()
     {
         bool has = HasSelection;
-        _hole.Rect = has ? _sel : new Rect(0, 0, 0, 0);
-        _annotationClip.Rect = has ? _sel : new Rect(0, 0, 0, 0);
+        _selectedView.Visibility = has ? Visibility.Visible : Visibility.Collapsed;
+        if (has)
+        {
+            Canvas.SetLeft(_selectedView, _sel.X);
+            Canvas.SetTop(_selectedView, _sel.Y);
+            _selectedView.Width = _sel.Width;
+            _selectedView.Height = _sel.Height;
+            _selectedBrush.Viewbox = _sel;
+        }
+        _annotationLayer.ClipRect = has ? _sel : Rect.Empty;
 
         // Border (stroke is drawn inside the shape, so expand it to sit just outside the selection)
         _border.Visibility = has ? Visibility.Visible : Visibility.Collapsed;

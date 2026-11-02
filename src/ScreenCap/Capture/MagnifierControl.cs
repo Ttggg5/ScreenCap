@@ -11,7 +11,14 @@ internal sealed class MagnifierControl : Border
 {
     private readonly PixelView _view = new();
     private static readonly Brush Active = Brushes.White;
-    private static readonly Brush Inactive = new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A));
+
+    /// <summary>Shared by every overlay, so it must not belong to one thread.</summary>
+    internal static Brush Frozen(Brush brush)
+    {
+        brush.Freeze();
+        return brush;
+    }
+    private static readonly Brush Inactive = Frozen(new SolidColorBrush(Color.FromRgb(0x8A, 0x8A, 0x8A)));
 
     private readonly TextBlock _position = CreateText();
     private readonly TextBlock _hex = CreateText();
@@ -94,7 +101,7 @@ internal sealed class MagnifierControl : Border
     {
         private const int Cells = 15;
         private const double CellSize = 8;
-        private static readonly Brush Band = new SolidColorBrush(Color.FromArgb(0x50, 0x1A, 0x9F, 0xFF));
+        private static readonly Brush Band = Frozen(new SolidColorBrush(Color.FromArgb(0x50, 0x1A, 0x9F, 0xFF)));
 
         private ScreenSnapshot? _snapshot;
         private int _x, _y;
