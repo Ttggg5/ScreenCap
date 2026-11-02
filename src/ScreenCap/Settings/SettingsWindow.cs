@@ -37,8 +37,8 @@ internal sealed class SettingsWindow : Window
     public SettingsWindow()
     {
         Title = "ScreenCap 設定";
-        Width = 520;
-        SizeToContent = SizeToContent.Height;
+        Width = 760;
+        Height = 520;
         ResizeMode = ResizeMode.NoResize;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI");
@@ -57,65 +57,155 @@ internal sealed class SettingsWindow : Window
             _historyLimit.Items.Add(new ComboBoxItem { Content = limit == 0 ? "不保留" : $"最近 {limit} 張", Tag = limit });
         _historyLimit.SelectedIndex = limits.IndexOf(AppSettings.HistoryLimit);
 
-        var body = new StackPanel { Margin = new Thickness(24, 16, 24, 20) };
+        var hotkeys = Page("熱鍵");
+        hotkeys.Children.Add(Hint("點一下欄位後按下想要的按鍵組合；按 Backspace 或 Delete 停用該熱鍵。"));
+        hotkeys.Children.Add(Row("截圖", _capture));
+        hotkeys.Children.Add(Row("錄製螢幕", _record));
+        hotkeys.Children.Add(Row("剪貼簿貼為貼圖", _pin));
+        hotkeys.Children.Add(Row("再次開啟上一張截圖", _reopen));
+        hotkeys.Children.Add(Row("截圖歷史庫", _history));
+        hotkeys.Children.Add(Row("截圖辨識文字", _ocr));
+        hotkeys.Children.Add(Row("截圖辨識 QR Code", _barcode));
 
-        body.Children.Add(Heading("熱鍵"));
-        body.Children.Add(Hint("點一下欄位後按下想要的按鍵組合；按 Backspace 或 Delete 停用該熱鍵。"));
-        body.Children.Add(Row("截圖", _capture));
-        body.Children.Add(Row("錄製螢幕", _record));
-        body.Children.Add(Row("剪貼簿貼為貼圖", _pin));
-        body.Children.Add(Row("再次開啟上一張截圖", _reopen));
-        body.Children.Add(Row("截圖歷史庫", _history));
-        body.Children.Add(Row("截圖辨識文字", _ocr));
-        body.Children.Add(Row("截圖辨識 QR Code", _barcode));
-
-        body.Children.Add(Heading("存檔"));
-        body.Children.Add(Hint("另存新檔的預設位置；截圖時按 Ctrl+Shift+S 會直接存成 PNG 到這裡。"));
+        var saving = Page("存檔");
+        saving.Children.Add(Hint("另存新檔的預設位置；截圖時按 Ctrl+Shift+S 會直接存成 PNG 到這裡。"));
         var browse = new Button { Content = "瀏覽…", Margin = new Thickness(8, 0, 0, 0) };
         browse.Click += (_, _) => BrowseFolder();
         var folderRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
         DockPanel.SetDock(browse, Dock.Right);
         folderRow.Children.Add(browse);
         folderRow.Children.Add(_folder);
-        body.Children.Add(folderRow);
-        body.Children.Add(Row("檔名格式", _pattern));
-        body.Children.Add(Hint("{date} 日期、{time} 時間、{title} 截圖的視窗標題、{n} 流水號（001、002…），也可以用 {yyyy-MM-dd} 這類日期格式。"));
-        body.Children.Add(_patternPreview);
+        saving.Children.Add(folderRow);
+        saving.Children.Add(Row("檔名格式", _pattern));
+        saving.Children.Add(Hint("{date} 日期、{time} 時間、{title} 截圖的視窗標題、{n} 流水號（001、002…），也可以用 {yyyy-MM-dd} 這類日期格式。"));
+        saving.Children.Add(_patternPreview);
         _pattern.TextChanged += (_, _) => UpdatePatternPreview();
         UpdatePatternPreview();
-        body.Children.Add(_copyPath);
-        body.Children.Add(_reveal);
+        saving.Children.Add(_copyPath);
+        saving.Children.Add(_reveal);
 
-        body.Children.Add(Heading("截圖"));
-        body.Children.Add(Row("Enter / 雙擊選區", _confirm));
-        body.Children.Add(Row("截圖歷史庫", _historyLimit));
-        body.Children.Add(Hint("複製、存檔或貼到桌面的截圖會自動保留一份，可從系統匣選單的「截圖歷史庫」找回。超過張數時刪除最舊的；改成「不保留」會刪除已保留的截圖。"));
+        var capture = Page("截圖");
+        capture.Children.Add(Row("Enter / 雙擊選區", _confirm));
+        capture.Children.Add(_cursor);
+        capture.Children.Add(Heading("截圖歷史庫"));
+        capture.Children.Add(Row("保留", _historyLimit));
+        capture.Children.Add(Hint("複製、存檔或貼到桌面的截圖會自動保留一份，可從系統匣選單的「截圖歷史庫」找回。超過張數時刪除最舊的；改成「不保留」會刪除已保留的截圖。"));
 
-        body.Children.Add(Heading("一般"));
-        body.Children.Add(Row("外觀", _theme));
-        body.Children.Add(_startup);
-        body.Children.Add(_cursor);
-        body.Children.Add(_clicks);
-        body.Children.Add(_keys);
-        body.Children.Add(_hardware);
-        body.Children.Add(Hint("多螢幕或高解析度下截圖畫面不夠順時再開啟；會多用約 200 MB 記憶體。"));
-        body.Children.Add(_autoUpdate);
-        body.Children.Add(Hint($"目前版本：{Update.UpdateService.CurrentVersion}。也可以從系統匣選單的「檢查更新…」立即檢查。"));
+        var recording = Page("錄影");
+        recording.Children.Add(Hint("錄影的格式與聲音在框選錄影範圍時的工具列上選擇。"));
+        recording.Children.Add(_clicks);
+        recording.Children.Add(_keys);
+
+        var general = Page("一般");
+        general.Children.Add(Row("外觀", _theme));
+        general.Children.Add(_startup);
+        general.Children.Add(_hardware);
+        general.Children.Add(Hint("多螢幕或高解析度下截圖畫面不夠順時再開啟；會多用約 200 MB 記憶體。"));
+        general.Children.Add(_autoUpdate);
+        general.Children.Add(Hint($"目前版本：{Update.UpdateService.CurrentVersion}。也可以從系統匣選單的「檢查更新…」立即檢查。"));
+
+        var nav = new StackPanel { Width = 168, Margin = new Thickness(12, 16, 0, 16) };
+        foreach (var (glyph, page) in new[] { ("\uE765", hotkeys), ("\uE74E", saving), ("\uE722", capture), ("\uE714", recording), ("\uE713", general) })
+        {
+            var item = NavItem(glyph, (string)page.Tag, page);
+            _nav.Add((item, page));
+            nav.Children.Add(item);
+        }
 
         var reset = new Button { Content = "還原預設" };
         reset.Click += (_, _) => ResetDefaults();
         var ok = new Button { Content = "確定", IsDefault = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) }.Themed(StyleProperty, "AccentButton");
         ok.Click += (_, _) => Apply();
         var cancel = new Button { Content = "取消", IsCancel = true, MinWidth = 90, Margin = new Thickness(8, 0, 0, 0) };
-        var buttons = new DockPanel { Margin = new Thickness(0, 24, 0, 0), LastChildFill = false };
+        var buttons = new DockPanel { Margin = new Thickness(24, 14, 24, 18), LastChildFill = false };
         buttons.Children.Add(reset);
         DockPanel.SetDock(cancel, Dock.Right);
         DockPanel.SetDock(ok, Dock.Right);
         buttons.Children.Add(cancel);
         buttons.Children.Add(ok);
-        body.Children.Add(buttons);
+        // The buttons stay at the bottom; only a page that doesn't fit scrolls.
+        var footer = new Border { BorderThickness = new Thickness(0, 1, 0, 0), Child = buttons }
+            .Themed(Border.BorderBrushProperty, "Brush.Divider");
 
-        Content = body;
+        var pageHost = new ScrollViewer
+        {
+            Content = _page,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Padding = new Thickness(24, 20, 24, 16),
+            Focusable = false,
+        };
+        var root = new DockPanel();
+        DockPanel.SetDock(footer, Dock.Bottom);
+        DockPanel.SetDock(nav, Dock.Left);
+        root.Children.Add(footer);
+        root.Children.Add(nav);
+        root.Children.Add(pageHost);
+        Content = root;
+        ShowPage(hotkeys);
+    }
+
+    private readonly ContentControl _page = new() { Focusable = false };
+    private readonly List<(Border Item, StackPanel Page)> _nav = new();
+
+    /// <summary>A settings page starting with its title; the title is also its name in the side list.</summary>
+    private static StackPanel Page(string title)
+    {
+        var page = new StackPanel { Tag = title };
+        var heading = Heading(title);
+        heading.FontSize = 20;
+        heading.Margin = new Thickness(0, 0, 0, 10);
+        page.Children.Add(heading);
+        return page;
+    }
+
+    private Border NavItem(string glyph, string text, StackPanel page)
+    {
+        var label = new StackPanel { Orientation = Orientation.Horizontal };
+        label.Children.Add(new TextBlock
+        {
+            Text = glyph,
+            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 15,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0),
+        });
+        label.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
+        var item = new Border
+        {
+            Child = label,
+            Padding = new Thickness(12, 8, 12, 8),
+            Margin = new Thickness(0, 0, 0, 2),
+            CornerRadius = new CornerRadius(5),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+        };
+        item.MouseLeftButtonUp += (_, _) => ShowPage(page);
+        item.MouseEnter += (_, _) => StyleNav();
+        item.MouseLeave += (_, _) => StyleNav();
+        return item;
+    }
+
+    private void ShowPage(StackPanel page)
+    {
+        _page.Content = page;
+        StyleNav();
+    }
+
+    /// <summary>Highlights the current page in the side list, and the one under the mouse.</summary>
+    private void StyleNav()
+    {
+        foreach (var (item, page) in _nav)
+        {
+            bool current = _page.Content == page;
+            if (current)
+                item.Themed(Border.BackgroundProperty, "Brush.AccentSoft");
+            else if (item.IsMouseOver)
+                item.Themed(Border.BackgroundProperty, "Brush.Hover");
+            else
+                item.Background = Brushes.Transparent;
+            var text = (TextBlock)((StackPanel)item.Child).Children[1];
+            text.FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal;
+        }
     }
 
     private static TextBlock Heading(string text) => new()
@@ -194,6 +284,7 @@ internal sealed class SettingsWindow : Window
         var keys = new[] { _capture.Hotkey, _record.Hotkey, _pin.Hotkey, _reopen.Hotkey, _history.Hotkey, _ocr.Hotkey, _barcode.Hotkey }.Where(k => !k.IsNone).ToList();
         if (keys.Distinct().Count() != keys.Count)
         {
+            ShowPage(_nav[0].Page);
             MessageBox.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
