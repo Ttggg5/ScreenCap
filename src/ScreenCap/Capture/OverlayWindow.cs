@@ -90,6 +90,9 @@ internal sealed class OverlayWindow : Window
     private readonly AnnotationAdorner _adorner = new() { IsHitTestVisible = false, HandleSize = HandleSize };
     private readonly Border _sizeLabel;
     private readonly TextBlock _sizeText;
+    private readonly NumberBox _widthBox = SizeBox("寬度");
+    private readonly NumberBox _heightBox = SizeBox("高度");
+    private readonly TextBlock _sizeHint;
     private readonly MagnifierControl _magnifier = new();
     private readonly SelectionToolbar _toolbar = new();
     private readonly UndoStack _annotations = new();
@@ -101,6 +104,7 @@ internal sealed class OverlayWindow : Window
     private Rect _origSel;
     private int _handle = -1;
     private Point _cursor;
+    private SelectionRatio _ratio = SelectionRatio.FromIndex(AppSettings.SelectionRatio);
 
     private ToolKind _tool = ToolKind.None;
     private Color _color;
@@ -214,13 +218,25 @@ internal sealed class OverlayWindow : Window
             _root.Children.Add(_handles[i]);
         }
 
-        _sizeText = new TextBlock { Foreground = Brushes.White, FontSize = 12, FontFamily = new FontFamily("Consolas, Segoe UI") };
+        _sizeText = SizeLabelText("");
+        _sizeHint = SizeLabelText("");
+        var sizeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        sizeRow.Children.Add(_sizeText);
+        sizeRow.Children.Add(_widthBox);
+        sizeRow.Children.Add(SizeLabelText(" × "));
+        sizeRow.Children.Add(_heightBox);
+        sizeRow.Children.Add(_sizeHint);
+        _widthBox.ValueCommitted += w => ApplySize(w, null);
+        _heightBox.ValueCommitted += h => ApplySize(null, h);
+        _widthBox.EditingFinished += FocusOverlay;
+        _heightBox.EditingFinished += FocusOverlay;
+        _magnifier.Ratio = _ratio.Name;
         _sizeLabel = new Border
         {
             Background = new SolidColorBrush(Color.FromArgb(0xCC, 0, 0, 0)),
             CornerRadius = new CornerRadius(3),
-            Padding = new Thickness(6, 2, 6, 2),
-            Child = _sizeText,
+            Padding = new Thickness(4, 1, 6, 1),
+            Child = sizeRow,
             IsHitTestVisible = false,
             RenderTransform = _chromeScale,
             Visibility = Visibility.Collapsed,
@@ -441,7 +457,8 @@ internal sealed class OverlayWindow : Window
     private Point MousePoint(MouseEventArgs e) => ClampPoint(e.GetPosition(_root));
 
     private bool IsOverChrome() =>
-        (_toolbar.IsVisible && _toolbar.IsMouseOver) || (_textBox != null && _textBox.IsMouseOver);
+        (_toolbar.IsVisible && _toolbar.IsMouseOver) || (_textBox != null && _textBox.IsMouseOver)
+        || (_sizeLabel.IsHitTestVisible && _sizeLabel.IsMouseOver);
 
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
@@ -587,12 +604,12 @@ internal sealed class OverlayWindow : Window
                 if (Math.Abs(p.X - _press.X) > DragThreshold || Math.Abs(p.Y - _press.Y) > DragThreshold)
                 {
                     _state = State.Selecting;
-                    _sel = Span(_press, p);
+                    _sel = _ratio.Span(_press, p, ScreenSize);
                 }
                 break;
 
             case State.Selecting:
-                _sel = Span(_press, p);
+                _sel = _ratio.Span(_press, p, ScreenSize);
                 break;
 
             case State.Moving:
@@ -603,7 +620,9 @@ internal sealed class OverlayWindow : Window
                 break;
 
             case State.Resizing:
-                _sel = ResizeFrom(_origSel, _handle, p.X - _press.X, p.Y - _press.Y);
+                _sel = _ratio.IsFree
+                    ? ResizeFrom(_origSel, _handle, p.X - _press.X, p.Y - _press.Y)
+                    : _ratio.Resize(_origSel, _handle, p - _press, ScreenSize) ?? _sel;
                 break;
 
             case State.Drawing:
@@ -901,6 +920,9 @@ internal sealed class OverlayWindow : Window
                                   && _state is State.Detecting or State.Selected:
                 CaptureWindowUnderCursor();
                 break;
+            case Key.R when !ctrl && _mode != OverlayMode.EditPin && _state is State.Detecting or State.Selected:
+                CycleRatio();
+                break;
             case Key.A when ctrl && _mode != OverlayMode.EditPin && _state is State.Detecting or State.Selected:
                 SelectScreen();
                 break;
@@ -1092,9 +1114,73 @@ internal sealed class OverlayWindow : Window
 
     private void DetectAt(Point p) => _sel = _detector.HitTest((int)p.X, (int)p.Y) ?? Rect.Empty;
 
-    private static Rect Span(Point a, Point b) => new(
-        Math.Min(a.X, b.X), Math.Min(a.Y, b.Y),
-        Math.Abs(a.X - b.X) + 1, Math.Abs(a.Y - b.Y) + 1);
+    private Size ScreenSize => new(_snap.Width, _snap.Height);
+
+    /// <summary>Locks the selection to the next aspect ratio (free, 1:1, 4:3, …); a selection already made is fitted to it.</summary>
+    private void CycleRatio()
+    {
+        _ratio = SelectionRatio.FromIndex(_ratio.Index + 1);
+        AppSettings.SelectionRatio = _ratio.Index;
+        _magnifier.Ratio = _ratio.Name;
+        if (_state == State.Selected && HasSelection && !_ratio.IsFree)
+        {
+            RestoreSnapshot(); // no longer the window captured with W
+            _sel = _ratio.Fit(_sel);
+        }
+        Refresh();
+    }
+
+    /// <summary>Sets the selection to a typed width or height; with a locked ratio the other side follows.</summary>
+    private void ApplySize(double? width, double? height)
+    {
+        if (_state != State.Selected || !HasSelection)
+            return;
+        double w = width ?? _sel.Width, h = height ?? _sel.Height;
+        if (!_ratio.IsFree)
+        {
+            if (width is { } typedW)
+                h = _ratio.Other(typedW, true, _sel.Size);
+            else if (height is { } typedH)
+                w = _ratio.Other(typedH, false, _sel.Size);
+            if (w > _snap.Width || h > _snap.Height)
+            {
+                Refresh(); // the ratio can't be kept at that size: show the size again
+                return;
+            }
+        }
+        w = Math.Clamp(w, 1, _snap.Width);
+        h = Math.Clamp(h, 1, _snap.Height);
+        // Keep the top-left corner, moving it only as far as needed to stay on the screen.
+        RestoreSnapshot();
+        _sel = new Rect(Math.Clamp(_sel.X, 0, _snap.Width - w), Math.Clamp(_sel.Y, 0, _snap.Height - h), w, h);
+        Refresh();
+    }
+
+    private static TextBlock SizeLabelText(string text) => new()
+    {
+        Text = text,
+        Foreground = Brushes.White,
+        FontSize = 12,
+        FontFamily = new FontFamily("Consolas, Segoe UI"),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    /// <summary>The width or height in the size label: shows the size, and once selected, can be typed into.</summary>
+    private static NumberBox SizeBox(string what) => new()
+    {
+        Minimum = 1,
+        Maximum = 100_000,
+        Width = 44,
+        Height = 18,
+        Padding = new Thickness(1, 0, 1, 0),
+        Margin = new Thickness(1, 0, 1, 0),
+        TextAlignment = TextAlignment.Center,
+        Foreground = Brushes.White,
+        CaretBrush = Brushes.White,
+        Background = new SolidColorBrush(Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)),
+        BorderThickness = new Thickness(0),
+        ToolTip = $"輸入{what}（像素），按 Enter 套用",
+    };
 
     private Rect ResizeFrom(Rect r, int handle, double dx, double dy)
     {
@@ -1620,8 +1706,14 @@ internal sealed class OverlayWindow : Window
         if (has)
         {
             string purpose = _mode switch { OverlayMode.Ocr => "文字辨識　", OverlayMode.Barcode => "QR Code / 條碼　", _ => "" };
-            _sizeText.Text = purpose + $"{_sel.Width:0} × {_sel.Height:0}"
-                + (QuickAction != null && _state == State.Selected ? "　按 Enter 辨識" : "");
+            _sizeText.Text = purpose + (_ratio.IsFree || _mode == OverlayMode.EditPin ? "" : _ratio.Name + "　");
+            _sizeHint.Text = QuickAction != null && _state == State.Selected ? "　按 Enter 辨識" : "";
+            // Typing a size is for the selection once made; while dragging the boxes only show it.
+            _sizeLabel.IsHitTestVisible = _state == State.Selected && _mode != OverlayMode.EditPin;
+            if (!_widthBox.IsKeyboardFocusWithin)
+                _widthBox.Value = _sel.Width;
+            if (!_heightBox.IsKeyboardFocusWithin)
+                _heightBox.Value = _sel.Height;
             _sizeLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double labelH = _sizeLabel.DesiredSize.Height * _scale;
             double y = _sel.Y - labelH - 4 * _scale;

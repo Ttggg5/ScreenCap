@@ -87,4 +87,21 @@ public class OverlayRenderingTests
         var pixel = Images.PixelAt(image, 100, 100);
         Assert.True(pixel.R == pixel.G && pixel.G == pixel.B, $"expected gray or white, got {pixel}");
     });
+
+    [Fact]
+    public void TypedWidth_WithALockedRatio_SetsTheHeightToo() => Sta.Run(() =>
+    {
+        var snap = Images.Snapshot(500, 300, Colors.White);
+        var overlay = new OverlayWindow(snap, WindowDetector.Snapshot(snap), OverlayMode.Capture, new Rect(460, 60, 30, 30));
+        const BindingFlags any = BindingFlags.NonPublic | BindingFlags.Instance;
+        typeof(OverlayWindow).GetField("_ratio", any)!.SetValue(overlay, SelectionRatio.All.Single(r => r.Name == "16:9"));
+        overlay.Show();
+        Pump();
+        typeof(OverlayWindow).GetMethod("ApplySize", any)!.Invoke(overlay, [(double?)400, null]);
+        var selection = (Rect)typeof(OverlayWindow).GetField("_sel", any)!.GetValue(overlay)!;
+        overlay.Close();
+
+        // 400 × 225, moved left just enough to stay on the screen.
+        Assert.Equal(new Rect(100, 60, 400, 225), selection);
+    });
 }

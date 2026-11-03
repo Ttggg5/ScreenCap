@@ -253,6 +253,13 @@ internal static class AppSettings
         set => Set("CaptureCursor", value ? "1" : "0");
     }
 
+    /// <summary>Index of the aspect ratio new selections are locked to (R in the capture overlay); 0 is free.</summary>
+    public static int SelectionRatio
+    {
+        get => int.TryParse(Get("SelectionRatio"), out int i) ? i : 0;
+        set => Set("SelectionRatio", value.ToString());
+    }
+
     /// <summary>The magnifier copies RGB instead of HEX when pressing C.</summary>
     public static bool CopyColorAsRgb
     {

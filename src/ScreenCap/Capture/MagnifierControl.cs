@@ -23,6 +23,7 @@ internal sealed class MagnifierControl : Border
     private readonly TextBlock _position = CreateText();
     private readonly TextBlock _hex = CreateText();
     private readonly TextBlock _rgb = CreateText();
+    private readonly TextBlock _ratio = CreateText();
     private readonly Border _swatch = new() { Width = 12, Height = 12, BorderBrush = Brushes.White, BorderThickness = new Thickness(1), Margin = new Thickness(0, 0, 6, 0) };
 
     public MagnifierControl()
@@ -48,6 +49,9 @@ internal sealed class MagnifierControl : Border
         info.Children.Add(_position);
         info.Children.Add(colorRow);
         info.Children.Add(hint);
+        _ratio.Foreground = hint.Foreground;
+        info.Children.Add(_ratio);
+        Ratio = SelectionRatio.Free.Name;
 
         UseRgb = false;
 
@@ -70,6 +74,12 @@ internal sealed class MagnifierControl : Border
             _hex.Foreground = value ? Inactive : Active;
             _rgb.Foreground = value ? Active : Inactive;
         }
+    }
+
+    /// <summary>The aspect ratio new selections are locked to, shown with the key that changes it.</summary>
+    public string Ratio
+    {
+        set => _ratio.Text = $"R：框選比例　{value}";
     }
 
     /// <summary>The color under the cursor in the selected format, as copied by C.</summary>
