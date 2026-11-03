@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # Tests that record or read the real screen need an interactive desktop and a GPU, which CI doesn't have.
+      - name: Test
+        run: dotnet test -c Release --filter "Category!=Desktop"

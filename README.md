@@ -118,6 +118,23 @@ dotnet publish src/ScreenCap -c Release -r win-x64 --self-contained false -o pub
 
 > ScreenCap 執行時會鎖住 `bin` 裡的執行檔，所以重新建置前要先從系統匣結束它。如果不想關掉，可以加 `--artifacts-path <其他資料夾>`，把建置輸出放到別處。
 
+## 發佈新版本
+
+推送版本標籤後，GitHub Actions 會建置、測試、發佈單一 exe，並建立 release（[`.github/workflows/release.yml`](.github/workflows/release.yml)）。`scripts/release.ps1` 會一起改好 `ScreenCap.csproj` 的版本、commit「Release 1.3.0」並打上 `v1.3.0` 標籤，但不會推送：
+
+```powershell
+# 選擇性：先寫好更新說明，會一起 commit
+notepad .github/release-notes/v1.3.0.md
+
+./scripts/release.ps1 1.3.0
+git push origin main v1.3.0
+```
+
+- 有 `.github/release-notes/v1.3.0.md` 時直接用它當說明並發佈；沒有的話建立草稿，附上 GitHub 自動產生的變更清單。自我更新會略過草稿，寫好說明、在 GitHub 上發佈後使用者才會收到更新
+- 標籤和 `<Version>` 不一致時 workflow 會失敗，不會發佈
+- `v1.3.0-beta.1` 這類標籤會標成 prerelease，自我更新不會提供
+- 每次推到 `main` 或開 PR 時也會跑測試（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）。錄螢幕與截取被擋住視窗的測試需要真正的桌面與 GPU，標成 `Category=Desktop`，CI 上不跑；在本機用 `dotnet test` 會全部跑
+
 ## 專案結構
 
 ```
@@ -156,7 +173,7 @@ tests/ScreenCap.Tests/  xUnit 測試
 - **QR Code / 條碼**：用 [ZXing.Net](https://github.com/micjahn/ZXing.Net) 解碼（專案唯一的第三方套件）。只找常見的格式，避免把文字或條紋誤判成少見的一維條碼；範圍不大又沒找到時，會用最近鄰插值放大 3 倍再找一次，因為螢幕上的小 QR Code 常常每格只有 1、2 個像素。沒有標示編碼的內容由 ZXing 猜測編碼，所以啟動時註冊了 CodePages 編碼。
 - **截圖歷史庫**：存成 PNG 放在 `%LocalAppData%\ScreenCap\History`，在背景執行緒編碼，不會拖慢截圖。視窗標題、時間與尺寸記在同資料夾的 `index.json`；寫入時先寫暫存檔再取代，索引遺失或損壞時改從資料夾裡的 PNG 重建（只少了視窗標題）。縮圖直接以小尺寸解碼，不會把整張大圖讀進記憶體。截圖存好後在背景逐張 OCR，辨識出的文字也記在 `index.json`；搜尋時忽略空白，因為 OCR 在中文字之間加不加空格並不穩定。
 - **圖章**：符號用 Segoe UI Symbol 的字形外框繪製，依外框（而不是字型的行高）置中在圓裡，所以 ? 和 ★ 也不會偏。自訂圖片縮到最長邊 512 像素後存成 PNG，放在 `%LocalAppData%\ScreenCap\Stamps`。
-- **自動更新**：讀取 GitHub API 的最新 release，標籤（例如 `v1.1.0`）和 `ScreenCap.csproj` 的 `<Version>` 比較，所以發新版時兩者要一起改。下載的 `ScreenCap.exe` 先存成同資料夾的 `ScreenCap.exe.new`，比對大小與 GitHub 提供的 SHA-256。執行中的 exe 不能刪除但可以改名，所以把它改成 `ScreenCap.exe.old`、放入新檔，再以 `--updated <舊程式的 PID>` 啟動新版；新版等舊程式結束、釋放單一執行個體的 mutex 後才接手，並刪掉 `.old`。只有發佈的單一 exe 能自我更新，從原始碼執行時只會開啟下載頁面。
+- **自動更新**：讀取 GitHub API 的最新 release，標籤（例如 `v1.1.0`）和 `ScreenCap.csproj` 的 `<Version>` 比較，所以兩者必須一致：發版時用 `scripts/release.ps1` 一起改，release workflow 也會檢查。下載的 `ScreenCap.exe` 先存成同資料夾的 `ScreenCap.exe.new`，比對大小與 GitHub 提供的 SHA-256。執行中的 exe 不能刪除但可以改名，所以把它改成 `ScreenCap.exe.old`、放入新檔，再以 `--updated <舊程式的 PID>` 啟動新版；新版等舊程式結束、釋放單一執行個體的 mutex 後才接手，並刪掉 `.old`。只有發佈的單一 exe 能自我更新，從原始碼執行時只會開啟下載頁面。
 - **記憶體**：預設用軟體繪製（`RenderMode.SoftwareOnly`）。WPF 一用 GPU 繪製就會載入 Direct3D 與顯示卡驅動，光是開一個小視窗就多約 180 MB，對常駐系統匣的工具不划算；截圖畫面在 3840×1080 下整個重繪一次約 27 毫秒，仍然夠順。需要時可在設定中開啟 GPU 加速。另外每次截圖都有一份整個螢幕的像素，截圖、貼圖、長截圖與錄影結束約 2 秒後會做一次壓縮大型物件堆積的完整 GC，把記憶體還給 Windows，不然閒置的 app 要很久才會回收。為了 `Ctrl+Shift+F1` 保留的上一張截圖，在背景把畫面壓縮（Deflate）後才留著，重開時再解壓：3840×1080 的畫面原本要約 33 MB（像素加上點陣圖各一份），壓縮後只要幾 MB。複製圖片不用 WPF 的 `Clipboard.SetImage`：它每次另外產生的 GDI 點陣圖不會釋放，每複製一張就留下一張截圖大小的記憶體；改為自己把圖片轉成剪貼簿通用的 DIB 格式。
 - **設定**：存在登錄檔 `HKCU\Software\ScreenCap`；開機時啟動寫在 `HKCU\...\CurrentVersion\Run`。
 - **測試**：設定相關的測試改用另一個登錄機碼，不會動到使用者的設定。GIF 和 MP4 測試會把編碼結果解碼回來，逐像素比對，MP4 的音軌也會解碼回來檢查聲音出現的時間；錄影測試會實際擷取螢幕，所以需要在已登入的桌面環境下執行。

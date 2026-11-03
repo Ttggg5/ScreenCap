@@ -5,6 +5,7 @@ namespace ScreenCap.Tests;
 
 /// <summary>Records the real screen, so these need an interactive desktop session.</summary>
 [Collection(ScreenCap.Tests.Support.ScreenCollection.Name)]
+[Trait("Category", "Desktop")] // left out on CI: no interactive desktop or GPU there
 public class ScreenRecorderTests
 {
     private sealed class FakeEncoder : IFrameEncoder

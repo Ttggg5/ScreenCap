@@ -1,0 +1,68 @@
+name: Release
+
+# Pushing a version tag (v1.3.0, or v1.3.0-beta.1 for a prerelease) builds, tests and publishes ScreenCap.exe.
+# scripts/release.ps1 sets the version, commits and tags.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # to create the release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      # The self-update compares the release tag with the version built into the exe: they must agree,
+      # or every user would be offered the same update again after installing it.
+      - name: Check that the tag matches the version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          [xml]$project = Get-Content src/ScreenCap/ScreenCap.csproj
+          $version = @($project.Project.PropertyGroup.Version | Where-Object { $_ })[0]
+          if (($tag -replace '^v', '' -replace '-.*$', '') -ne $version) {
+            Write-Error "Tag $tag does not match <Version>$version</Version> in ScreenCap.csproj."
+            exit 1
+          }
+
+      - name: Test
+        run: dotnet test -c Release --filter "Category!=Desktop"
+
+      - name: Publish
+        run: dotnet publish src/ScreenCap -p:PublishProfile=SingleFile
+
+      # With release notes in .github/release-notes/<tag>.md the release is published right away. Without them it is
+      # created as a draft with GitHub's generated list of changes: the self-update ignores drafts, so nobody is
+      # offered the update until the notes are written and the draft is published.
+      - name: Create the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $options = @($tag, 'publish/ScreenCap.exe', '--title', "ScreenCap $($tag -replace '^v', '')", '--verify-tag')
+          if ($tag -match '-') { $options += '--prerelease' }
+          $notes = ".github/release-notes/$tag.md"
+          if (Test-Path $notes) { $options += @('--notes-file', $notes) }
+          else { $options += @('--draft', '--generate-notes') }
+          gh release create @options
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          $file = Get-Item publish/ScreenCap.exe
+          $hash = (Get-FileHash $file -Algorithm SHA256).Hash
+          $state = if (Test-Path $notes) { 'published' } else { 'created as a draft (no release notes found): publish it on GitHub once the notes are written' }
+          @"
+          ## ScreenCap $tag
+          Release $state.
+
+          | File | Size | SHA-256 |
+          |---|---|---|
+          | ScreenCap.exe | $($file.Length) bytes | ``$hash`` |
+          "@ >> $env:GITHUB_STEP_SUMMARY

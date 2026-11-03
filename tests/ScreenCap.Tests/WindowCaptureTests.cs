@@ -8,6 +8,7 @@ using ScreenCap.Tests.Support;
 namespace ScreenCap.Tests;
 
 [Collection(ScreenCollection.Name)]
+[Trait("Category", "Desktop")] // left out on CI: no interactive desktop there
 public class WindowCaptureTests
 {
     private static void Pump()
