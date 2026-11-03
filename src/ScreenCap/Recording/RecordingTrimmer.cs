@@ -33,6 +33,116 @@ internal static class RecordingTrimmer
     public static RecordingTimeline Load(string path, RecordingFormat format, CancellationToken cancel = default) =>
         format == RecordingFormat.Gif ? LoadGif(path, cancel) : LoadMp4(path, cancel);
 
+    /// <summary>
+    /// Plays <paramref name="from"/> to <paramref name="to"/> at full size: decodes the frames in order and hands each
+    /// to <paramref name="show"/> (top-down BGRA, width, height) when <paramref name="position"/> reaches its time.
+    /// Frames decoded too late to show in time are skipped. Returns at the end or when cancelled.
+    /// </summary>
+    /// <param name="position">The playback position now, from the caller's clock.</param>
+    public static void Play(string path, RecordingFormat format, TimeSpan from, TimeSpan to, Func<TimeSpan> position,
+        Action<byte[], int, int> show, CancellationToken cancel)
+    {
+        var late = TimeSpan.FromMilliseconds(100);
+        foreach (var (time, pixels, width, height) in FramesFrom(path, format, from, cancel))
+        {
+            if (time >= to)
+                break;
+            var wait = time - position();
+            if (wait > TimeSpan.Zero && cancel.WaitHandle.WaitOne(wait))
+                break;
+            if (cancel.IsCancellationRequested)
+                break;
+            if (position() - time <= late || time <= from)
+                show(pixels, width, height);
+        }
+    }
+
+    /// <summary>The frame showing at <paramref name="from"/> (stamped <paramref name="from"/>), then every frame after it.</summary>
+    private static IEnumerable<(TimeSpan Time, byte[] Pixels, int Width, int Height)> FramesFrom(string path, RecordingFormat format, TimeSpan from,
+        CancellationToken cancel)
+    {
+        if (format == RecordingFormat.Gif)
+        {
+            var bytes = File.ReadAllBytes(path);
+            var gif = GifFile.Parse(bytes);
+            var times = gif.FrameTimes();
+            int first = FrameRange(times, from, from).First;
+            var canvas = new byte[gif.Width * gif.Height * 4];
+            var decoder = new GifBitmapDecoder(new MemoryStream(bytes), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.None);
+            for (int i = 0; i < gif.Frames.Count; i++)
+            {
+                cancel.ThrowIfCancellationRequested();
+                Composite(decoder.Frames[i], gif.Frames[i], canvas, gif.Width);
+                if (i >= first)
+                    yield return (i == first ? from : times[i], (byte[])canvas.Clone(), gif.Width, gif.Height); // the canvas changes on
+            }
+            yield break;
+        }
+
+        using var reader = Mp4Reader.OpenVideo(path);
+        reader.Seek(from); // decoding resumes at the key frame before it
+        Mp4Reader.Frame? showing = null;
+        while (reader.ReadFrame() is { } frame)
+        {
+            cancel.ThrowIfCancellationRequested();
+            if (frame.Time <= from)
+            {
+                showing = frame;
+                continue;
+            }
+            if (showing != null)
+            {
+                yield return (from, showing.Bgra, reader.Width, reader.Height);
+                showing = null;
+            }
+            yield return (frame.Time, frame.Bgra, reader.Width, reader.Height);
+        }
+        if (showing != null)
+            yield return (from, showing.Bgra, reader.Width, reader.Height); // the last frame
+    }
+
+    /// <summary>The frame showing at <paramref name="time"/>, at full size; slower than the thumbnails, for when scrubbing stops.</summary>
+    public static BitmapSource FrameAt(string path, RecordingFormat format, TimeSpan time, CancellationToken cancel = default)
+    {
+        int width, height;
+        byte[] pixels;
+        if (format == RecordingFormat.Gif)
+        {
+            var bytes = File.ReadAllBytes(path);
+            var gif = GifFile.Parse(bytes);
+            (width, height) = (gif.Width, gif.Height);
+            int index = FrameRange(gif.FrameTimes(), time, time).First;
+            pixels = new byte[width * height * 4];
+            var decoder = new GifBitmapDecoder(new MemoryStream(bytes), BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.None);
+            for (int i = 0; i <= index; i++)
+            {
+                cancel.ThrowIfCancellationRequested();
+                Composite(decoder.Frames[i], gif.Frames[i], pixels, width);
+            }
+        }
+        else
+        {
+            using var reader = Mp4Reader.OpenVideo(path);
+            (width, height) = (reader.Width, reader.Height);
+            reader.Seek(time);
+            // The last frame at or before the time; decoding starts at the key frame before it.
+            Mp4Reader.Frame? showing = null;
+            while (reader.ReadFrame() is { } frame)
+            {
+                cancel.ThrowIfCancellationRequested();
+                if (frame.Time > time && showing != null)
+                    break;
+                showing = frame;
+                if (frame.Time > time)
+                    break; // the time is before the first frame
+            }
+            pixels = showing?.Bgra ?? new byte[width * height * 4];
+        }
+        var bitmap = BitmapSource.Create(width, height, 96, 96, PixelFormats.Bgr32, null, pixels, width * 4);
+        bitmap.Freeze();
+        return bitmap;
+    }
+
     /// <summary>Writes the part of <paramref name="source"/> from <paramref name="start"/> to <paramref name="end"/> to <paramref name="destination"/>.</summary>
     public static void Trim(string source, string destination, RecordingFormat format, TimeSpan start, TimeSpan end, int mp4FramesPerSecond = 30)
     {
@@ -131,6 +241,7 @@ internal static class RecordingTrimmer
         }
         if (times.Count == 0)
             return new RecordingTimeline([TimeSpan.Zero], TimeSpan.Zero, []);
+        times[0] = TimeSpan.Zero; // the first frame shows from the start, even if stamped a little after it
         var duration = times[^1] + (times.Count > 1 ? (times[^1] - times[0]) / (times.Count - 1) : TimeSpan.FromSeconds(1.0 / 30));
         var due = ThumbnailTimes(times, duration);
         var thumbs = new List<(TimeSpan, BitmapSource)>();

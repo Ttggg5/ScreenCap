@@ -59,6 +59,24 @@ public sealed class Mp4EncoderTests : IDisposable
         Assert.InRange(redLeft, 10 + 20 * 3 - 2, 10 + 20 * 3 + 2);
     }
 
+    [Theory]
+    [InlineData(330, 250)]  // not a multiple of 16 wide: the decoder pads its rows
+    [InlineData(1234, 566)]
+    public void Decodes_WidthsThatArentAMultipleOf16_WithoutShearing(int width, int height)
+    {
+        EncodeMovingBox(width, height, 5, 30);
+        var video = Mp4Reader.Read(_path);
+        Assert.Equal((width, height), (video.Width, video.Height));
+        var frame = video.Frames[2].Bgra;
+        // The blue square stays at the top-left and the white below it stays white, on every row.
+        Assert.True(Images.Distance(Colors.Blue, Images.PixelAt(frame, width, 10, 10)) < 12);
+        for (int y = 30; y < height; y += 17)
+        {
+            Assert.True(Images.Distance(Colors.White, Images.PixelAt(frame, width, 5, y)) < 12, $"row {y}: {Images.PixelAt(frame, width, 5, y)}");
+            Assert.True(Images.Distance(Colors.White, Images.PixelAt(frame, width, width - 5, y)) < 12, $"row {y} right");
+        }
+    }
+
     /// <summary>Root mean square of the left channel between two times, in seconds.</summary>
     private static double Rms(short[] samples, double from, double to)
     {

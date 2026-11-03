@@ -152,4 +152,80 @@ public sealed class RecordingTrimmerTests : IDisposable
         Assert.InRange(audio.Length / AudioMixer.Channels / (double)AudioMixer.SampleRate, 0.95, 1.1);
         Assert.InRange(Rms(audio, 0.1, 0.9), 4500, 7000); // the tone, from the start
     }
+
+    [Fact]
+    public void Mp4_FrameAt_IsTheFullSizeFrameShowingThen()
+    {
+        EncodeMp4();
+        Assert.Equal(TimeSpan.Zero, RecordingTrimmer.Load(_source, RecordingFormat.Mp4).FrameTimes[0]); // the timeline starts at zero
+
+        foreach (var (seconds, color) in new[] { (0.0, Colors.Red), (1.5, Colors.Lime), (2.9, Colors.Blue), (1.2, Colors.Lime) })
+        {
+            var frame = RecordingTrimmer.FrameAt(_source, RecordingFormat.Mp4, TimeSpan.FromSeconds(seconds));
+            Assert.Equal((320, 240), (frame.PixelWidth, frame.PixelHeight));
+            Assert.True(Images.Distance(color, Images.PixelAt(frame, 160, 120)) < 30, $"{seconds} s: {Images.PixelAt(frame, 160, 120)}");
+        }
+    }
+
+    [Fact]
+    public void Gif_FrameAt_HasEverythingUpToThatFrame() => Sta.Run(() =>
+    {
+        EncodeGif();
+        var frame = RecordingTrimmer.FrameAt(_source, RecordingFormat.Gif, TimeSpan.FromSeconds(2.5));
+        Assert.Equal((W, H), (frame.PixelWidth, frame.PixelHeight));
+        Assert.Equal(Colors.Red, Images.PixelAt(frame, 5, 5));
+        Assert.Equal(Colors.Blue, Images.PixelAt(frame, 35, 25));
+    });
+
+    [Fact]
+    public void Mp4_Play_ShowsEveryFrameOfTheRange_InTime_AtFullSize()
+    {
+        EncodeMp4();
+        // From the first green frame to the first blue one, as the trim window would pick them.
+        var times = RecordingTrimmer.Load(_source, RecordingFormat.Mp4).FrameTimes;
+        TimeSpan from = times[30], to = times[60];
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var shown = new List<(TimeSpan At, Color Color, int Width)>();
+        RecordingTrimmer.Play(_source, RecordingFormat.Mp4, from, to, () => from + clock.Elapsed,
+            (pixels, width, _) => shown.Add((clock.Elapsed, Images.PixelAt(pixels, width, 160, 120), width)), CancellationToken.None);
+
+        Assert.InRange(shown.Count, 25, 31); // 30 frames; one or two may be skipped on a slow machine
+        Assert.All(shown, f => Assert.Equal(320, f.Width));
+        Assert.All(shown, f => Assert.True(Images.Distance(Colors.Lime, f.Color) < 30, f.Color.ToString()));
+        Assert.InRange(clock.Elapsed.TotalSeconds, 0.9, 1.5); // real time, not as fast as it decodes
+    }
+
+    [Fact]
+    public void Play_StopsWhenCancelled()
+    {
+        EncodeMp4();
+        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        int count = 0;
+        try
+        {
+            RecordingTrimmer.Play(_source, RecordingFormat.Mp4, TimeSpan.Zero, TimeSpan.FromSeconds(3), () => clock.Elapsed, (_, _, _) => count++, cancel.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        Assert.InRange(clock.Elapsed.TotalSeconds, 0, 0.6);
+        Assert.InRange(count, 1, 12);
+    }
+
+    [Fact]
+    public void Gif_Play_StartsWithTheWholePicture() => Sta.Run(() =>
+    {
+        EncodeGif();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var from = TimeSpan.FromSeconds(2);
+        var shown = new List<byte[]>();
+        RecordingTrimmer.Play(_source, RecordingFormat.Gif, from, TimeSpan.FromSeconds(3.5), () => from + clock.Elapsed,
+            (pixels, _, _) => shown.Add(pixels), CancellationToken.None);
+
+        Assert.Equal(2, shown.Count);
+        Assert.Equal(Colors.Red, Images.PixelAt(shown[0], W, 5, 5));   // drawn before the start, still there
+        Assert.Equal(Colors.Blue, Images.PixelAt(shown[0], W, 35, 25));
+        Assert.Equal(Colors.Lime, Images.PixelAt(shown[1], W, 5, 5));
+    });
 }

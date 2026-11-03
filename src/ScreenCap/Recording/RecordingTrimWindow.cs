@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ScreenCap.Services;
 using ScreenCap.Theme;
@@ -36,8 +38,21 @@ internal sealed class RecordingTrimWindow : Window
     private bool _finished;
 
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(33) };
-    private DateTime _playStarted;
+
+    // The thumbnails are small; once scrubbing pauses, the frame is decoded at full size and shown instead.
+    private readonly DispatcherTimer _sharpen = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private CancellationTokenSource? _decoding;
+    private TimeSpan _shownTime;
+    private readonly Stopwatch _playClock = new();
     private TimeSpan _playFrom;
+    private CancellationTokenSource? _playback;
+    // The newest decoded frame waiting to be shown; frames that arrive before it is shown replace it.
+    private (byte[] Pixels, int Width, int Height)? _nextFrame;
+    private readonly Lock _nextFrameLock = new();
+    private bool _frameQueued;
+    private WriteableBitmap? _playBitmap;
+
+    private TimeSpan PlayPosition => _playFrom + _playClock.Elapsed;
 
     private RecordingTrimWindow(string path, RecordingFormat format, int mp4FramesPerSecond)
     {
@@ -110,6 +125,7 @@ internal sealed class RecordingTrimWindow : Window
         Content = root;
 
         _timer.Tick += (_, _) => PlayTick();
+        _sharpen.Tick += async (_, _) => await ShowFullFrameAsync();
         PreviewKeyDown += OnKey;
         Loaded += async (_, _) => await LoadAsync();
         Closing += (_, e) =>
@@ -120,6 +136,9 @@ internal sealed class RecordingTrimWindow : Window
         Closed += (_, _) =>
         {
             _timer.Stop();
+            _playback?.Cancel();
+            _sharpen.Stop();
+            _decoding?.Cancel();
             _loading.Cancel();
             _result.TrySetResult(null);
         };
@@ -195,10 +214,37 @@ internal sealed class RecordingTrimWindow : Window
     /// <summary>The first kept frame when moving the start, the last kept one when moving the end.</summary>
     private void ShowEditedEnd() => ShowFrameAt(_editingEnd ? _bounds[_end - 1] : Start);
 
-    private void ShowFrameAt(TimeSpan time)
+    /// <param name="sharpen">Decode the frame at full size once nothing changes for a moment (not while playing).</param>
+    private void ShowFrameAt(TimeSpan time, bool sharpen = true)
     {
+        _decoding?.Cancel();
+        _sharpen.Stop();
+        _shownTime = time;
         if (_timeline?.ThumbnailAt(time) is { } image)
             _preview.Source = image;
+        if (sharpen)
+            _sharpen.Start();
+    }
+
+    private async Task ShowFullFrameAsync()
+    {
+        _sharpen.Stop();
+        var decoding = _decoding = new CancellationTokenSource();
+        var time = _shownTime;
+        try
+        {
+            var frame = await Task.Run(() => RecordingTrimmer.FrameAt(_path, _format, time, decoding.Token), decoding.Token);
+            if (!decoding.IsCancellationRequested && _shownTime == time)
+                _preview.Source = frame;
+        }
+        catch (OperationCanceledException)
+        {
+            // Moved on to another frame.
+        }
+        catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException or InvalidDataException)
+        {
+            // Keep the thumbnail.
+        }
     }
 
     private void ShowRange()
@@ -249,6 +295,10 @@ internal sealed class RecordingTrimWindow : Window
 
     // ---------------------------------------------------------------- playing
 
+    /// <summary>
+    /// Plays the kept part at full size: a background task decodes the frames in order and hands each one over
+    /// when its time comes; the timer only moves the playhead.
+    /// </summary>
     private void TogglePlay()
     {
         if (_timer.IsEnabled)
@@ -256,10 +306,60 @@ internal sealed class RecordingTrimWindow : Window
             StopPlaying();
             return;
         }
+        _decoding?.Cancel();
+        _sharpen.Stop();
         _playFrom = Start;
-        _playStarted = DateTime.UtcNow;
+        _playClock.Restart();
         _play.Content = "❚❚";
         _timer.Start();
+
+        var playback = _playback = new CancellationTokenSource();
+        TimeSpan from = Start, to = End;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                RecordingTrimmer.Play(_path, _format, from, to, () => PlayPosition, (pixels, width, height) => QueueFrame(pixels, width, height, playback.Token),
+                    playback.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopped.
+            }
+            catch (Exception ex) when (ex is IOException or System.Runtime.InteropServices.COMException or InvalidDataException)
+            {
+                // Can't decode: the playhead still moves over the picture shown.
+            }
+        });
+    }
+
+    /// <summary>On the decoding thread: keeps the frame and asks the UI thread to show it, once per batch.</summary>
+    private void QueueFrame(byte[] pixels, int width, int height, CancellationToken playback)
+    {
+        lock (_nextFrameLock)
+        {
+            _nextFrame = (pixels, width, height);
+            if (_frameQueued)
+                return;
+            _frameQueued = true;
+        }
+        Dispatcher.BeginInvoke(() =>
+        {
+            (byte[] Pixels, int Width, int Height)? frame;
+            lock (_nextFrameLock)
+            {
+                frame = _nextFrame;
+                _nextFrame = null;
+                _frameQueued = false;
+            }
+            if (playback.IsCancellationRequested || frame is not { } f)
+                return;
+            // One bitmap for the whole playback, written over for each frame.
+            if (_playBitmap == null || _playBitmap.PixelWidth != f.Width || _playBitmap.PixelHeight != f.Height)
+                _playBitmap = new WriteableBitmap(f.Width, f.Height, 96, 96, PixelFormats.Bgr32, null);
+            _playBitmap.WritePixels(new Int32Rect(0, 0, f.Width, f.Height), f.Pixels, f.Width * 4, 0);
+            _preview.Source = _playBitmap;
+        });
     }
 
     private void StopPlaying()
@@ -267,6 +367,9 @@ internal sealed class RecordingTrimWindow : Window
         if (!_timer.IsEnabled)
             return;
         _timer.Stop();
+        _playback?.Cancel();
+        _playback = null;
+        _playBitmap = null; // its memory goes with it; the next playback makes a new one
         _play.Content = "▶";
         _bar.Playhead = null;
         ShowEditedEnd();
@@ -274,14 +377,13 @@ internal sealed class RecordingTrimWindow : Window
 
     private void PlayTick()
     {
-        var at = _playFrom + (DateTime.UtcNow - _playStarted);
+        var at = PlayPosition;
         if (at >= End)
         {
             StopPlaying();
             return;
         }
         _bar.Playhead = at;
-        ShowFrameAt(at);
     }
 
     // ---------------------------------------------------------------- result
