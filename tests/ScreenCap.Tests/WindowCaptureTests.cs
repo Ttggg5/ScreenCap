@@ -7,6 +7,7 @@ using ScreenCap.Tests.Support;
 
 namespace ScreenCap.Tests;
 
+[Collection(ScreenCollection.Name)]
 public class WindowCaptureTests
 {
     private static void Pump()

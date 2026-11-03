@@ -78,14 +78,14 @@ public class OverlayRenderingTests
 
         typeof(OverlayWindow).GetMethod("ResetSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, null);
         Pump();
-        var image = Render(overlay, 400, 300);
         overlay.Close();
 
         Assert.Same(original, overlay.Snapshot);
         Assert.Same(original, overlay.OriginalSnapshot);
-        // White, dimmed or not (the selection detected under the real cursor may cover it), but no longer the red window.
-        var pixel = Images.PixelAt(image, 100, 100);
-        Assert.True(pixel.R == pixel.G && pixel.G == pixel.B, $"expected gray or white, got {pixel}");
+        // The screen shown is the original again. (Not checked by its pixels: the selection detected under the real
+        // cursor, with its size label, can be drawn over any point.)
+        var background = (System.Windows.Controls.Image)typeof(OverlayWindow).GetField("_background", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(overlay)!;
+        Assert.Same(original.Bitmap, background.Source);
     });
 
     [Fact]

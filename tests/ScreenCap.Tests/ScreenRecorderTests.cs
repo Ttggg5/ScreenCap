@@ -4,6 +4,7 @@ using ScreenCap.Recording;
 namespace ScreenCap.Tests;
 
 /// <summary>Records the real screen, so these need an interactive desktop session.</summary>
+[Collection(ScreenCap.Tests.Support.ScreenCollection.Name)]
 public class ScreenRecorderTests
 {
     private sealed class FakeEncoder : IFrameEncoder
@@ -182,7 +183,16 @@ public class ScreenRecorderTests
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         shown.Wait(TimeSpan.FromSeconds(5));
-        Thread.Sleep(300); // let DWM put it on screen
+        // WPF draws on its render thread and DWM composes after that: wait until the screen really shows it.
+        var center = new Int32Rect(bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2, 1, 1);
+        var deadline = DateTime.UtcNow.AddSeconds(5);
+        while (DateTime.UtcNow < deadline)
+        {
+            var px = ScreenCap.Services.ScreenCaptureService.CaptureRegion(center);
+            if (ScreenCap.Tests.Support.Images.Distance(color, System.Windows.Media.Color.FromRgb(px[2], px[1], px[0])) < 6)
+                break;
+            Thread.Sleep(50);
+        }
         return new Closer(() =>
         {
             dispatcher!.InvokeShutdown();
