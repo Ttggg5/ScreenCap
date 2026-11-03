@@ -31,9 +31,46 @@ internal static class CaptureSession
 
     private static bool _countingDown;
 
-    /// <summary>The last finished capture: its frozen screen, selection and still-editable annotations.</summary>
-    /// <param name="Original">The frozen screen without a window brought forward with W.</param>
-    private sealed record LastCapture(ScreenSnapshot Snapshot, ScreenSnapshot Original, WindowDetector Detector, Rect Selection, List<Annotation> Annotations);
+    /// <summary>The last finished capture: its frozen screen (compressed), selection and still-editable annotations.</summary>
+    /// <param name="Original">The frozen screen without a window brought forward with W; the same object if there was none.</param>
+    /// <param name="Annotations">Stored without their screen (<see cref="ScreenSnapshot.Detached"/>); given it back on reopening.</param>
+    private sealed record LastCapture(StoredSnapshot Snapshot, StoredSnapshot Original, WindowDetector Detector, Rect Selection, List<Annotation> Annotations);
+
+    /// <summary>The last capture, which reopening it shows again.</summary>
+    internal static (ScreenSnapshot Snapshot, ScreenSnapshot Original)? RestoreLast()
+    {
+        if (_last is not { } last)
+            return null;
+        var snapshot = last.Snapshot.Restore();
+        return (snapshot, ReferenceEquals(last.Original, last.Snapshot) ? snapshot : last.Original.Restore());
+    }
+
+    /// <summary>Waits until the last capture is compressed (for tests).</summary>
+    internal static Task LastCompressed => _last is { } last ? Task.WhenAll(last.Snapshot.Compressing, last.Original.Compressing) : Task.CompletedTask;
+
+    /// <summary>Points mosaics and magnifiers at <paramref name="screen"/>, the screen they show pixels from.</summary>
+    private static void AttachScreen(IEnumerable<Annotation> annotations, ScreenSnapshot screen)
+    {
+        foreach (var annotation in annotations)
+        {
+            if (annotation is MosaicAnnotation mosaic)
+                mosaic.Snapshot = screen;
+            else if (annotation is MagnifierAnnotation magnifier)
+                magnifier.Snapshot = screen;
+        }
+    }
+
+    /// <summary>Keeps a finished capture to reopen; its screen is compressed in the background.</summary>
+    private static void Remember(ScreenSnapshot snapshot, ScreenSnapshot original, WindowDetector detector, Rect selection, List<Annotation> annotations)
+    {
+        AttachScreen(annotations, ScreenSnapshot.Detached);
+        var stored = new StoredSnapshot(snapshot);
+        var storedOriginal = ReferenceEquals(original, snapshot) ? stored : new StoredSnapshot(original);
+        _last = new LastCapture(stored, storedOriginal, detector, selection, annotations);
+        // Once compressed, the screen itself is garbage: give its memory back.
+        var dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+        Task.WhenAll(stored.Compressing, storedOriginal.Compressing).ContinueWith(_ => dispatcher.BeginInvoke(MemoryRelease.Schedule));
+    }
 
     private static LastCapture? _last;
 
@@ -52,8 +89,10 @@ internal static class CaptureSession
         IsActive = true;
         try
         {
-            Show(new OverlayWindow(last.Snapshot, last.Detector, OverlayMode.Capture, last.Selection, last.Annotations.Select(a => a.Clone()), last.Original),
-                last.Detector);
+            var (snapshot, original) = RestoreLast()!.Value;
+            var annotations = last.Annotations.Select(a => a.Clone()).ToList();
+            AttachScreen(annotations, snapshot);
+            Show(new OverlayWindow(snapshot, last.Detector, OverlayMode.Capture, last.Selection, annotations, original), last.Detector);
         }
         catch
         {
@@ -68,7 +107,7 @@ internal static class CaptureSession
         {
             IsActive = false;
             if (overlay.Session is { } session)
-                _last = new LastCapture(overlay.Snapshot, overlay.OriginalSnapshot, detector, session.Selection, session.Annotations);
+                Remember(overlay.Snapshot, overlay.OriginalSnapshot, detector, session.Selection, session.Annotations);
             HandleResult(overlay.Result);
             MemoryRelease.Schedule(); // the previous capture's screen copy is garbage now
         };

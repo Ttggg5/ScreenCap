@@ -1,3 +1,5 @@
+using System.IO;
+using System.IO.Compression;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -37,6 +39,20 @@ internal sealed class ScreenSnapshot
         y = Math.Clamp(y, 0, Height - 1);
         int i = y * Stride + x * 4;
         return Color.FromRgb(Pixels[i + 2], Pixels[i + 1], Pixels[i]);
+    }
+
+    /// <summary>
+    /// A 1 × 1 stand-in for annotations that are stored without their screen (mosaics and magnifiers show
+    /// pixels from it), so the stored annotations don't keep a whole screen in memory.
+    /// </summary>
+    public static ScreenSnapshot Detached { get; } = CreateDetached();
+
+    private static ScreenSnapshot CreateDetached()
+    {
+        var pixels = new byte[4];
+        var bitmap = BitmapSource.Create(1, 1, 96, 96, PixelFormats.Bgr32, null, pixels, 4);
+        bitmap.Freeze();
+        return new ScreenSnapshot(0, 0, 1, 1, pixels, 4, bitmap);
     }
 
     /// <summary>Returns a copy with <paramref name="image"/> painted at (x, y) in snapshot coordinates.</summary>
@@ -108,6 +124,66 @@ internal sealed class ScreenSnapshot
         var cropped = new CroppedBitmap(Bitmap, rect);
         cropped.Freeze();
         return cropped;
+    }
+}
+
+/// <summary>
+/// A frozen screen kept for later (the last capture, to reopen it), compressed in the background: a whole
+/// screen is tens of MB as pixels (and as many again as a bitmap), but screens compress to a few MB.
+/// </summary>
+internal sealed class StoredSnapshot
+{
+    private readonly Lock _lock = new();
+    private readonly int _left, _top, _width, _height, _stride;
+    private ScreenSnapshot? _raw;      // until compressed
+    private byte[]? _compressed;
+
+    public StoredSnapshot(ScreenSnapshot snapshot)
+    {
+        _raw = snapshot;
+        (_left, _top, _width, _height, _stride) = (snapshot.Left, snapshot.Top, snapshot.Width, snapshot.Height, snapshot.Stride);
+        Compressing = Task.Run(Compress);
+    }
+
+    /// <summary>Done once the pixels are compressed and the snapshot itself is let go.</summary>
+    public Task Compressing { get; }
+
+    /// <summary>Compressed size in bytes, 0 until compressed.</summary>
+    public int CompressedLength => _compressed?.Length ?? 0;
+
+    private void Compress()
+    {
+        ScreenSnapshot? raw;
+        lock (_lock)
+            raw = _raw;
+        if (raw == null)
+            return;
+        using var buffer = new MemoryStream();
+        using (var deflate = new ZLibStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
+            deflate.Write(raw.Pixels);
+        lock (_lock)
+        {
+            _compressed = buffer.ToArray();
+            _raw = null;
+        }
+    }
+
+    /// <summary>The screen again: the snapshot itself if it isn't compressed yet, else decompressed into a new one.</summary>
+    public ScreenSnapshot Restore()
+    {
+        byte[] compressed;
+        lock (_lock)
+        {
+            if (_raw != null)
+                return _raw;
+            compressed = _compressed!;
+        }
+        var pixels = new byte[_stride * _height];
+        using (var inflate = new ZLibStream(new MemoryStream(compressed), CompressionMode.Decompress))
+            inflate.ReadExactly(pixels);
+        var bitmap = BitmapSource.Create(_width, _height, 96, 96, PixelFormats.Bgr32, null, pixels, _stride);
+        bitmap.Freeze();
+        return new ScreenSnapshot(_left, _top, _width, _height, pixels, _stride, bitmap);
     }
 }
 
