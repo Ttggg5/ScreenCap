@@ -504,6 +504,8 @@ internal sealed class HelpWindow : Window
             "設定記錄的是勾選當下執行檔的位置。如果之後搬移或刪除了 ScreenCap，請從新位置執行後重新勾選。");
         Question("同時開了兩個 ScreenCap？",
             "ScreenCap 同一時間只會執行一份，重複開啟時新的會直接結束。");
+        Question("ScreenCap 出現錯誤或突然關閉？",
+            "發生錯誤時會在 %LocalAppData%\\ScreenCap\\Logs 留下紀錄（最多保留 20 份），可從「設定 → 一般」的「開啟紀錄資料夾」開啟。只影響單一操作的錯誤會跳出通知，ScreenCap 繼續執行；必須關閉時會顯示訊息，來不及顯示的話下次啟動時會提醒。回報問題時附上紀錄有助於找出原因；紀錄不會自動上傳。");
     }
 
     // ---------------------------------------------------------------- content builders (used by BuildContent)

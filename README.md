@@ -73,6 +73,7 @@
 - 淺色 / 深色模式，可設為跟隨 Windows
 - 熱鍵、存檔資料夾、開機時啟動都可以在設定中調整
 - 自動更新：每天檢查 GitHub 上的新版本，確認後自動下載、驗證並重新啟動
+- 錯誤紀錄：發生錯誤或意外關閉時在 `%LocalAppData%\ScreenCap\Logs` 留下紀錄，可從設定開啟資料夾
 - app 內附使用說明，依分類瀏覽，也能搜尋（例如輸入「ctrl+shift」或「長截圖」）
 
 ## 預設熱鍵
@@ -175,5 +176,6 @@ tests/ScreenCap.Tests/  xUnit 測試
 - **圖章**：符號用 Segoe UI Symbol 的字形外框繪製，依外框（而不是字型的行高）置中在圓裡，所以 ? 和 ★ 也不會偏。自訂圖片縮到最長邊 512 像素後存成 PNG，放在 `%LocalAppData%\ScreenCap\Stamps`。
 - **自動更新**：讀取 GitHub API 的最新 release，標籤（例如 `v1.1.0`）和 `ScreenCap.csproj` 的 `<Version>` 比較，所以兩者必須一致：發版時用 `scripts/release.ps1` 一起改，release workflow 也會檢查。下載的 `ScreenCap.exe` 先存成同資料夾的 `ScreenCap.exe.new`，比對大小與 GitHub 提供的 SHA-256。執行中的 exe 不能刪除但可以改名，所以把它改成 `ScreenCap.exe.old`、放入新檔，再以 `--updated <舊程式的 PID>` 啟動新版；新版等舊程式結束、釋放單一執行個體的 mutex 後才接手，並刪掉 `.old`。只有發佈的單一 exe 能自我更新，從原始碼執行時只會開啟下載頁面。
 - **記憶體**：預設用軟體繪製（`RenderMode.SoftwareOnly`）。WPF 一用 GPU 繪製就會載入 Direct3D 與顯示卡驅動，光是開一個小視窗就多約 180 MB，對常駐系統匣的工具不划算；截圖畫面在 3840×1080 下整個重繪一次約 27 毫秒，仍然夠順。需要時可在設定中開啟 GPU 加速。另外每次截圖都有一份整個螢幕的像素，截圖、貼圖、長截圖與錄影結束約 2 秒後會做一次壓縮大型物件堆積的完整 GC，把記憶體還給 Windows，不然閒置的 app 要很久才會回收。為了 `Ctrl+Shift+F1` 保留的上一張截圖，在背景把畫面壓縮（Deflate）後才留著，重開時再解壓：3840×1080 的畫面原本要約 33 MB（像素加上點陣圖各一份），壓縮後只要幾 MB。複製圖片不用 WPF 的 `Clipboard.SetImage`：它每次另外產生的 GDI 點陣圖不會釋放，每複製一張就留下一張截圖大小的記憶體；改為自己把圖片轉成剪貼簿通用的 DIB 格式。
+- **錯誤紀錄**：攔下介面執行緒（`DispatcherUnhandledException`）、其他執行緒（`AppDomain.UnhandledException`）與沒人等待的 Task（`UnobservedTaskException`）的例外，連同版本、系統與繪製模式寫成 `%LocalAppData%\ScreenCap\Logs` 裡的文字檔，只留最新 20 份。介面執行緒的例外通常只影響那一次操作，所以記錄後讓程式繼續執行並跳出通知；10 秒內發生 5 次時判斷為卡在錯誤裡，改讓程式關閉。其他執行緒的例外一定會結束程式，這時寫成當機紀錄並跳出訊息；來不及顯示的話，下次啟動時提醒。原生程式碼（例如顯示卡驅動）造成的當機無法在 .NET 裡攔下，不會留下紀錄。
 - **設定**：存在登錄檔 `HKCU\Software\ScreenCap`；開機時啟動寫在 `HKCU\...\CurrentVersion\Run`。
 - **測試**：設定相關的測試改用另一個登錄機碼，不會動到使用者的設定。GIF 和 MP4 測試會把編碼結果解碼回來，逐像素比對，MP4 的音軌也會解碼回來檢查聲音出現的時間；錄影測試會實際擷取螢幕，所以需要在已登入的桌面環境下執行。

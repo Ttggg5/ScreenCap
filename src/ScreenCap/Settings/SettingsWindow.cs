@@ -105,6 +105,11 @@ internal sealed class SettingsWindow : Window
         general.Children.Add(Hint("多螢幕或高解析度下截圖畫面不夠順時再開啟；會多用約 200 MB 記憶體。"));
         general.Children.Add(_autoUpdate);
         general.Children.Add(Hint($"目前版本：{Update.UpdateService.CurrentVersion}。也可以從系統匣選單的「檢查更新…」立即檢查。"));
+        general.Children.Add(Heading("錯誤紀錄"));
+        general.Children.Add(Hint("ScreenCap 發生錯誤或意外關閉時，會在這個資料夾留下紀錄；回報問題時附上紀錄有助於找出原因。紀錄只存在這台電腦上，不會自動上傳。"));
+        var logs = new Button { Content = "開啟紀錄資料夾", HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 6, 0, 0) };
+        logs.Click += (_, _) => CrashLog.OpenFolder();
+        general.Children.Add(logs);
 
         var nav = new StackPanel { Width = 168, Margin = new Thickness(12, 16, 0, 16) };
         foreach (var (glyph, page) in new[] { ("\uE765", hotkeys), ("\uE74E", saving), ("\uE722", capture), ("\uE714", recording), ("\uE713", general) })

@@ -20,6 +20,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        CrashLog.Install(this);
         bool updated = WaitForReplacedProcess(e.Args);
         _singleInstance = new Mutex(true, "ScreenCap.SingleInstance.7F3C2A1E", out bool isFirst);
         if (!isFirst)
@@ -59,6 +60,8 @@ public partial class App : Application
         var failed = RegisterHotkeys();
         if (failed.Count > 0)
             Notifier.Show($"熱鍵已被其他程式占用：{string.Join("、", failed)}。可在系統匣的「設定」中更換。");
+        else if (CrashLog.TakeUnreportedCrash() is { } crash)
+            Notifier.Show("ScreenCap 上次意外關閉，已留下當機紀錄。點這裡查看。", () => CrashLog.Reveal(crash));
         else if (updated)
             Notifier.Show($"已更新到 ScreenCap {UpdateService.CurrentVersion}。");
         else
