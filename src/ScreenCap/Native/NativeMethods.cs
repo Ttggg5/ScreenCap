@@ -118,6 +118,11 @@ internal static class NativeMethods
         IntPtr hdcSrc, int xSrc, int ySrc, int rop);
 
     [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateDIBSection(IntPtr hdc, ref BITMAPINFOHEADER bmi, uint usage, out IntPtr bits, IntPtr section, uint offset);
+
+    [DllImport("gdi32.dll")] public static extern bool GdiFlush();
+
+    [DllImport("gdi32.dll")]
     public static extern int GetDIBits(IntPtr hdc, IntPtr hbmp, uint start, uint lines, byte[] bits,
         ref BITMAPINFOHEADER bmi, uint usage);
 

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using ScreenCap.Native;
 using static ScreenCap.Native.NativeMethods;
@@ -37,11 +38,13 @@ internal sealed class ScreenRecorder
     private readonly bool _highlightClicks;
     private readonly KeystrokeMonitor? _keys;
     private readonly AudioSources _audioSources;
+    private readonly bool _useGraphicsCapture;
     private readonly BlockingCollection<(byte[] Pixels, TimeSpan Time)> _frames;
     private readonly ConcurrentQueue<(short[] Samples, TimeSpan Time)> _audio = new();
     private AudioRecorder? _audioRecorder;
     private readonly ManualResetEventSlim _stopSignal = new();
     private readonly ManualResetEventSlim _running = new(true); // reset while paused
+    private readonly ManualResetEventSlim _clockStarted = new();
 
     // Paused time is left out: the clock stops, so timestamps continue where they left off.
     private readonly Stopwatch _clock = new();
@@ -53,9 +56,11 @@ internal sealed class ScreenRecorder
     /// <param name="highlightClicks">Draw a ring around the cursor when a mouse button is pressed.</param>
     /// <param name="keys">If given, the keys pressed are shown at the bottom of the frames.</param>
     /// <param name="audio">Sound to record; the encoder must be an <see cref="IAudioEncoder"/>.</param>
+    /// <param name="useGraphicsCapture">Capture with Windows.Graphics.Capture where possible, otherwise always with GDI.</param>
     public ScreenRecorder(Int32Rect region, int fps, Func<IFrameEncoder> createEncoder, bool highlightClicks = false, KeystrokeMonitor? keys = null,
-        AudioSources audio = AudioSources.None)
+        AudioSources audio = AudioSources.None, bool useGraphicsCapture = true)
     {
+        _useGraphicsCapture = useGraphicsCapture;
         _keys = keys;
         _audioSources = audio;
         _region = region;
@@ -76,6 +81,12 @@ internal sealed class ScreenRecorder
     }
 
     public bool IsPaused => !_running.IsSet;
+
+    /// <summary>Frames came from Windows.Graphics.Capture rather than GDI; known once capturing has started.</summary>
+    public bool UsedGraphicsCapture { get; private set; }
+
+    /// <summary>How many frames Windows.Graphics.Capture delivered (the others came from BitBlt).</summary>
+    public int GraphicsCaptureFrames { get; private set; }
 
     /// <summary>Audio sources that were requested but couldn't be opened (e.g. no microphone).</summary>
     public AudioSources FailedAudio { get; private set; }
@@ -105,22 +116,33 @@ internal sealed class ScreenRecorder
         var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _encodeTask = Task.Factory.StartNew(() => EncodeLoop(ready), TaskCreationOptions.LongRunning);
         await ready.Task;
-        if (_audioSources != AudioSources.None)
+        // Setting up the capture (a Direct3D device for Windows.Graphics.Capture) takes a moment; the clock starts
+        // after it, so the first frame is at the very start rather than after a gap.
+        var grabberReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _captureTask = Task.Factory.StartNew(() => CaptureLoop(grabberReady), TaskCreationOptions.LongRunning);
+        try
         {
-            _audioRecorder = new AudioRecorder(_audioSources, () => Elapsed, () => IsPaused, (samples, time) => _audio.Enqueue((samples, time)));
-            try
+            await grabberReady.Task;
+            if (_audioSources != AudioSources.None)
             {
-                FailedAudio = await _audioRecorder.StartAsync();
-            }
-            catch
-            {
-                _audioRecorder = null;
-                FailedAudio = _audioSources;
+                _audioRecorder = new AudioRecorder(_audioSources, () => Elapsed, () => IsPaused, (samples, time) => _audio.Enqueue((samples, time)));
+                try
+                {
+                    FailedAudio = await _audioRecorder.StartAsync();
+                }
+                catch
+                {
+                    _audioRecorder = null;
+                    FailedAudio = _audioSources;
+                }
             }
         }
-        lock (_clockLock)
-            _clock.Start();
-        _captureTask = Task.Factory.StartNew(CaptureLoop, TaskCreationOptions.LongRunning);
+        finally
+        {
+            lock (_clockLock)
+                _clock.Start();
+            _clockStarted.Set();
+        }
     }
 
     /// <summary>Stops capturing and waits for the encoder to finish writing the file.</summary>
@@ -132,11 +154,24 @@ internal sealed class ScreenRecorder
         await Task.WhenAll(_captureTask!, _encodeTask!).ConfigureAwait(false);
     }
 
-    private void CaptureLoop()
+    private void CaptureLoop(TaskCompletionSource grabberReady)
     {
         try
         {
-            using var grabber = new RegionGrabber(_region, _highlightClicks, _keys);
+            RegionGrabber grabber;
+            try
+            {
+                grabber = new RegionGrabber(_region, _highlightClicks, _keys, _useGraphicsCapture);
+            }
+            catch (Exception ex)
+            {
+                grabberReady.SetException(ex);
+                throw;
+            }
+            using var _ = grabber;
+            UsedGraphicsCapture = grabber.UsesGraphicsCapture;
+            grabberReady.SetResult();
+            _clockStarted.Wait();
             double interval = 1000.0 / _fps;
             for (long frame = 0; ;)
             {
@@ -148,6 +183,7 @@ internal sealed class ScreenRecorder
                     continue; // paused between the wait and reading the clock
                 // If the encoder falls behind, drop the frame; the previous one is simply shown longer.
                 _frames.TryAdd((grabber.Grab(), time));
+                GraphicsCaptureFrames = grabber.GraphicsCaptureFrames;
 
                 double wait = ++frame * interval - Elapsed.TotalMilliseconds;
                 if (wait > 0)
@@ -209,17 +245,20 @@ internal sealed class ScreenRecorder
             (encoder as IAudioEncoder)?.AddAudio(chunk.Samples, chunk.Time);
     }
 
-    /// <summary>Reusable GDI resources for grabbing one region, including the mouse cursor.</summary>
-    private sealed class RegionGrabber : IDisposable
+    /// <summary>
+    /// Grabs one region into a DIB, from Windows.Graphics.Capture or else with BitBlt, then draws the cursor,
+    /// clicks and keys on it with GDI.
+    /// </summary>
+    private sealed unsafe class RegionGrabber : IDisposable
     {
         private readonly Int32Rect _r;
-        private readonly IntPtr _screenDc, _memDc, _bitmap, _oldBitmap;
-        private BITMAPINFOHEADER _header;
+        private readonly IntPtr _screenDc, _memDc, _bitmap, _oldBitmap, _bits;
+        private readonly GraphicsCapture? _gpu;
         private readonly ClickPainter? _clicks;
         private readonly KeystrokeMonitor? _keys;
         private readonly KeyPainter? _keyPainter;
 
-        public RegionGrabber(Int32Rect region, bool highlightClicks, KeystrokeMonitor? keys)
+        public RegionGrabber(Int32Rect region, bool highlightClicks, KeystrokeMonitor? keys, bool useGraphicsCapture)
         {
             _r = region;
             var center = new POINT { X = region.X + region.Width / 2, Y = region.Y + region.Height / 2 };
@@ -233,9 +272,7 @@ internal sealed class ScreenRecorder
             }
             _screenDc = GetDC(IntPtr.Zero);
             _memDc = CreateCompatibleDC(_screenDc);
-            _bitmap = CreateCompatibleBitmap(_screenDc, region.Width, region.Height);
-            _oldBitmap = SelectObject(_memDc, _bitmap);
-            _header = new BITMAPINFOHEADER
+            var header = new BITMAPINFOHEADER
             {
                 biSize = 40,
                 biWidth = region.Width,
@@ -243,12 +280,32 @@ internal sealed class ScreenRecorder
                 biPlanes = 1,
                 biBitCount = 32,
             };
+            // A DIB section: its pixels can be written directly and drawn on with GDI.
+            _bitmap = CreateDIBSection(_screenDc, ref header, 0, out _bits, IntPtr.Zero, 0);
+            if (_bitmap == IntPtr.Zero)
+            {
+                DeleteDC(_memDc);
+                ReleaseDC(IntPtr.Zero, _screenDc);
+                throw new OutOfMemoryException("無法建立錄影用的點陣圖。");
+            }
+            _oldBitmap = SelectObject(_memDc, _bitmap);
+            if (useGraphicsCapture)
+                _gpu = GraphicsCapture.TryStart(region);
         }
+
+        public bool UsesGraphicsCapture => _gpu != null;
+
+        public int GraphicsCaptureFrames { get; private set; }
 
         public byte[] Grab()
         {
+            GdiFlush(); // GDI may still be drawing the previous frame's cursor into the bits
+            // Until Windows.Graphics.Capture delivers its first frame, BitBlt fills in.
             // No CAPTUREBLT here: it makes the cursor flicker when capturing repeatedly.
-            BitBlt(_memDc, 0, 0, _r.Width, _r.Height, _screenDc, _r.X, _r.Y, SRCCOPY);
+            if (_gpu != null && _gpu.CopyTo((byte*)_bits))
+                GraphicsCaptureFrames++;
+            else
+                BitBlt(_memDc, 0, 0, _r.Width, _r.Height, _screenDc, _r.X, _r.Y, SRCCOPY);
             _clicks?.Draw(_memDc, _r.X, _r.Y); // under the cursor
             CursorPainter.Draw(_memDc, _r.X, _r.Y);
             if (_keyPainter != null)
@@ -257,15 +314,15 @@ internal sealed class ScreenRecorder
                 _keyPainter.Draw(_memDc, _r.Width, _r.Height, text, time, Environment.TickCount64);
             }
 
+            GdiFlush();
             var pixels = new byte[_r.Width * _r.Height * 4];
-            SelectObject(_memDc, _oldBitmap);
-            GetDIBits(_memDc, _bitmap, 0, (uint)_r.Height, pixels, ref _header, 0);
-            SelectObject(_memDc, _bitmap);
+            Marshal.Copy(_bits, pixels, 0, pixels.Length);
             return pixels;
         }
 
         public void Dispose()
         {
+            _gpu?.Dispose();
             _clicks?.Dispose();
             _keyPainter?.Dispose();
             SelectObject(_memDc, _oldBitmap);

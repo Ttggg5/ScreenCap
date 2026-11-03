@@ -141,4 +141,91 @@ public class ScreenRecorderTests
         var error = await Assert.ThrowsAsync<InvalidOperationException>(recorder.StartAsync);
         Assert.Equal("no encoder", error.Message);
     }
+
+    private sealed class LastFrameEncoder : IFrameEncoder
+    {
+        public byte[]? Last { get; private set; }
+        public int Count { get; private set; }
+        public TimeSpan? First { get; private set; }
+        public void AddFrame(byte[] bgra, TimeSpan timestamp) => (Last, Count, First) = (bgra, Count + 1, First ?? timestamp);
+        public void Finish(TimeSpan endTime) { }
+        public void Dispose() { }
+    }
+
+    /// <summary>Shows a topmost window filled with <paramref name="color"/> on its own UI thread; dispose to close it.</summary>
+    private static IDisposable ShowSolidWindow(System.Windows.Media.Color color, Int32Rect bounds)
+    {
+        System.Windows.Threading.Dispatcher? dispatcher = null;
+        var shown = new ManualResetEventSlim();
+        var thread = new Thread(() =>
+        {
+            var window = new Window
+            {
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Topmost = true,
+                Background = new System.Windows.Media.SolidColorBrush(color),
+                WindowStartupLocation = WindowStartupLocation.Manual,
+            };
+            window.SourceInitialized += (_, _) =>
+            {
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(window).Handle;
+                ScreenCap.Native.NativeMethods.SetWindowPos(hwnd, ScreenCap.Native.NativeMethods.HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height, 0);
+            };
+            dispatcher = System.Windows.Threading.Dispatcher.CurrentDispatcher;
+            window.Show();
+            // A window without content never raises ContentRendered; once idle it has been shown and painted.
+            dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle, () => shown.Set());
+            System.Windows.Threading.Dispatcher.Run();
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        shown.Wait(TimeSpan.FromSeconds(5));
+        Thread.Sleep(300); // let DWM put it on screen
+        return new Closer(() =>
+        {
+            dispatcher!.InvokeShutdown();
+            thread.Join();
+        });
+    }
+
+    private sealed class Closer(Action close) : IDisposable
+    {
+        public void Dispose() => close();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RecordsWhatIsOnTheScreen(bool graphicsCapture)
+    {
+        var bounds = new Int32Rect(100, 100, 200, 120);
+        var color = System.Windows.Media.Color.FromRgb(0x20, 0xA0, 0x60);
+        using (ShowSolidWindow(color, bounds))
+        {
+            var encoder = new LastFrameEncoder();
+            // Inside the window, clear of its edges.
+            var region = new Int32Rect(bounds.X + 20, bounds.Y + 20, 64, 48);
+            var recorder = new ScreenRecorder(region, 20, () => encoder, useGraphicsCapture: graphicsCapture);
+            await recorder.StartAsync();
+            await Task.Delay(500);
+            await recorder.StopAsync();
+
+            if (graphicsCapture)
+            {
+                Assert.True(recorder.UsedGraphicsCapture, "Windows.Graphics.Capture should be available on Windows 11");
+                Assert.True(recorder.GraphicsCaptureFrames >= encoder.Count - 2, $"{recorder.GraphicsCaptureFrames} of {encoder.Count} frames"); // BitBlt only until the first one arrives
+            }
+            else
+                Assert.False(recorder.UsedGraphicsCapture);
+            Assert.True(encoder.Count >= 5, $"{encoder.Count} frames");
+            // Setting up the capture happens before the clock starts: no gap at the start of the video.
+            Assert.InRange(encoder.First!.Value.TotalMilliseconds, 0, 30);
+            Assert.Equal(64 * 48 * 4, encoder.Last!.Length);
+            // The middle is the window's color (the cursor may be elsewhere in the region, so not every pixel).
+            var pixel = ScreenCap.Tests.Support.Images.PixelAt(encoder.Last, 64, 32, 24);
+            Assert.True(ScreenCap.Tests.Support.Images.Distance(color, pixel) < 6, $"got {pixel}");
+        }
+    }
 }
