@@ -1,32 +1,132 @@
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using ScreenCap.Theme;
 
 namespace ScreenCap.Help;
 
-/// <summary>In-app user manual, opened from the tray menu.</summary>
+/// <summary>
+/// In-app user manual, opened from the tray menu: one topic at a time, picked in the side list,
+/// or every passage matching what is typed in the search box.
+/// </summary>
 internal sealed class HelpWindow : Window
 {
     private static HelpWindow? _instance;
 
+    // ---------------------------------------------------------------- content model
+
+    private abstract record Block;
+    private sealed record ParagraphBlock(string Text) : Block;
+    private sealed record BulletBlock(string Text) : Block;
+    private sealed record ShortcutsBlock((string Key, string Description)[] Rows) : Block;
+    private sealed record QuestionBlock(string Question, string Answer) : Block;
+
+    private sealed class Topic(string title, string glyph)
+    {
+        public string Title { get; } = title;
+        public string Glyph { get; } = glyph;
+        public List<Block> Blocks { get; } = new();
+    }
+
+    private readonly List<Topic> _topics = new();
+
+    // ---------------------------------------------------------------- UI
+
     private readonly StackPanel _body = new() { Margin = new Thickness(28, 20, 28, 28) };
+    private readonly ScrollViewer _scroller;
+    private readonly TextBox _search = new()
+    {
+        VerticalContentAlignment = VerticalAlignment.Center,
+        HorizontalContentAlignment = HorizontalAlignment.Left,
+        TextAlignment = TextAlignment.Left,
+        // Room for the magnifier glyph. TextBox applies its padding twice (around and inside the text), so this is half of it.
+        Padding = new Thickness(15, 3, 4, 3),
+    };
+    private readonly List<(Border Item, Topic Topic)> _nav = new();
+    private Topic? _current;
 
     private HelpWindow()
     {
         Title = "ScreenCap 使用說明";
-        Width = 640;
+        Width = 860;
         Height = 760;
-        MinWidth = 480;
+        MinWidth = 600;
         MinHeight = 400;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ThemeManager.Attach(this);
         FontFamily = new FontFamily("Segoe UI Variable Text, Microsoft JhengHei UI, Segoe UI");
         FontSize = 14;
         UseLayoutRounding = true;
-        Content = new ScrollViewer { Content = _body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         BuildContent();
+
+        // Search box with a magnifier glyph and a placeholder inside it.
+        var placeholder = new TextBlock
+        {
+            Text = "搜尋說明（Ctrl + F）",
+            IsHitTestVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(33, 0, 0, 0), // where the typed text starts
+        }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+        var glyph = new TextBlock
+        {
+            Text = "",
+            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 13,
+            IsHitTestVisible = false,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+        var searchBox = new Grid { Margin = new Thickness(12, 16, 12, 10) };
+        searchBox.Children.Add(_search);
+        searchBox.Children.Add(placeholder);
+        searchBox.Children.Add(glyph);
+        _search.TextChanged += (_, _) =>
+        {
+            placeholder.Visibility = _search.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_search.Text.Trim().Length > 0)
+                ShowResults(_search.Text);
+            else
+                ShowTopic(_current ?? _topics[0]);
+        };
+
+        var nav = new StackPanel { Margin = new Thickness(12, 0, 12, 16) };
+        foreach (var topic in _topics)
+        {
+            var item = NavItem(topic);
+            _nav.Add((item, topic));
+            nav.Children.Add(item);
+        }
+        var side = new DockPanel { Width = 220 };
+        DockPanel.SetDock(searchBox, Dock.Top);
+        side.Children.Add(searchBox);
+        side.Children.Add(new ScrollViewer { Content = nav, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false });
+        var sideBorder = new Border { BorderThickness = new Thickness(0, 0, 1, 0), Child = side }.Themed(Border.BorderBrushProperty, "Brush.Divider");
+
+        _scroller = new ScrollViewer { Content = _body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Focusable = false };
+        var root = new DockPanel();
+        DockPanel.SetDock(sideBorder, Dock.Left);
+        root.Children.Add(sideBorder);
+        root.Children.Add(_scroller);
+        Content = root;
+
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                _search.Focus();
+                _search.SelectAll();
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Escape && _search.Text.Length > 0)
+            {
+                _search.Clear();
+                e.Handled = true;
+            }
+        };
+        ShowTopic(_topics[0]);
     }
 
     public static void ShowManual()
@@ -42,12 +142,182 @@ internal sealed class HelpWindow : Window
         _instance.Activate();
     }
 
+    // ---------------------------------------------------------------- navigation
+
+    private Border NavItem(Topic topic)
+    {
+        var label = new StackPanel { Orientation = Orientation.Horizontal };
+        label.Children.Add(new TextBlock
+        {
+            Text = topic.Glyph,
+            FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
+            FontSize = 15,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 12, 0),
+        });
+        label.Children.Add(new TextBlock { Text = topic.Title, VerticalAlignment = VerticalAlignment.Center });
+        var item = new Border
+        {
+            Child = label,
+            Padding = new Thickness(12, 7, 12, 7),
+            Margin = new Thickness(0, 0, 0, 2),
+            CornerRadius = new CornerRadius(5),
+            Background = Brushes.Transparent,
+            Cursor = Cursors.Hand,
+        };
+        item.MouseLeftButtonUp += (_, _) =>
+        {
+            _current = topic;
+            if (_search.Text.Length > 0)
+                _search.Clear(); // shows the topic
+            else
+                ShowTopic(topic);
+        };
+        item.MouseEnter += (_, _) => StyleNav();
+        item.MouseLeave += (_, _) => StyleNav();
+        return item;
+    }
+
+    /// <summary>Highlights the topic shown in the side list (none while showing search results), and the one under the mouse.</summary>
+    private void StyleNav()
+    {
+        bool searching = _search.Text.Trim().Length > 0;
+        foreach (var (item, topic) in _nav)
+        {
+            bool current = !searching && topic == _current;
+            if (current)
+                item.Themed(Border.BackgroundProperty, "Brush.AccentSoft");
+            else if (item.IsMouseOver)
+                item.Themed(Border.BackgroundProperty, "Brush.Hover");
+            else
+                item.Background = Brushes.Transparent;
+            var text = (TextBlock)((StackPanel)item.Child).Children[1];
+            text.FontWeight = current ? FontWeights.SemiBold : FontWeights.Normal;
+        }
+    }
+
+    private void ShowTopic(Topic topic)
+    {
+        _current = topic;
+        _body.Children.Clear();
+        Heading(topic.Title, 22, top: 0);
+        foreach (var block in topic.Blocks)
+            Render(block, []);
+        _scroller.ScrollToTop();
+        StyleNav();
+    }
+
+    // ---------------------------------------------------------------- search
+
+    /// <summary>
+    /// Every passage containing all the typed words, grouped by topic. A word may also be in the topic's title
+    /// ("長截圖 30,000"), and a topic whose title has them all is shown whole. Spaces inside a word are optional,
+    /// so "ctrl+shift" finds "Ctrl + Shift".
+    /// </summary>
+    private void ShowResults(string query)
+    {
+        var terms = Terms(query);
+        _body.Children.Clear();
+        int count = 0;
+        foreach (var topic in _topics)
+        {
+            bool wholeTopic = Matches(topic.Title, terms);
+            var blocks = new List<Block>();
+            foreach (var block in topic.Blocks)
+            {
+                if (wholeTopic)
+                    blocks.Add(block);
+                else if (block is ShortcutsBlock shortcuts)
+                {
+                    var rows = shortcuts.Rows.Where(r => Matches(topic.Title + "\n" + r.Key + "\n" + r.Description, terms)).ToArray();
+                    if (rows.Length > 0)
+                        blocks.Add(new ShortcutsBlock(rows));
+                }
+                else if (Matches(topic.Title + "\n" + TextOf(block), terms))
+                    blocks.Add(block);
+            }
+            if (blocks.Count == 0)
+                continue;
+
+            var heading = Heading(topic.Title, 18, top: count == 0 ? 8 : 20);
+            heading.Inlines.Clear();
+            AddHighlighted(heading.Inlines, topic.Title, terms);
+            heading.Cursor = Cursors.Hand;
+            heading.ToolTip = "開啟這個分類";
+            heading.MouseLeftButtonUp += (_, _) =>
+            {
+                _current = topic;
+                _search.Clear();
+            };
+            foreach (var block in blocks)
+            {
+                Render(block, terms);
+                count += block is ShortcutsBlock s ? s.Rows.Length : 1;
+            }
+        }
+
+        var summary = new TextBlock
+        {
+            Text = count == 0 ? $"找不到「{query.Trim()}」。試試其他關鍵字，或從左側選擇分類。" : $"找到 {count} 筆符合「{query.Trim()}」的說明",
+            Margin = new Thickness(0, 0, 0, 8),
+            TextWrapping = TextWrapping.Wrap,
+        }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+        _body.Children.Insert(0, summary);
+        _scroller.ScrollToTop();
+        StyleNav();
+    }
+
+    private static string TextOf(Block block) => block switch
+    {
+        ParagraphBlock p => p.Text,
+        BulletBlock b => b.Text,
+        QuestionBlock q => q.Question + " " + q.Answer,
+        _ => "",
+    };
+
+    /// <summary>One pattern per typed word: case-insensitive, with optional whitespace between its characters.</summary>
+    internal static Regex[] Terms(string query) => query
+        .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+        .Select(word => new Regex(string.Join(@"\s*", word.Select(c => Regex.Escape(c.ToString()))), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        .ToArray();
+
+    internal static bool Matches(string text, Regex[] terms) => terms.Length > 0 && terms.All(t => t.IsMatch(text));
+
+    /// <summary>Adds <paramref name="text"/>, with the parts matching any of the terms highlighted.</summary>
+    private static void AddHighlighted(InlineCollection inlines, string text, Regex[] terms)
+    {
+        var marked = new bool[text.Length];
+        foreach (var term in terms)
+        {
+            foreach (Match m in term.Matches(text))
+            {
+                for (int i = m.Index; i < m.Index + m.Length; i++)
+                    marked[i] = true;
+            }
+        }
+        int start = 0;
+        while (start < text.Length)
+        {
+            int end = start;
+            while (end < text.Length && marked[end] == marked[start])
+                end++;
+            var run = new Run(text[start..end]);
+            if (marked[start])
+            {
+                run.SetResourceReference(TextElement.BackgroundProperty, "Brush.AccentSoft");
+                run.FontWeight = FontWeights.SemiBold;
+            }
+            inlines.Add(run);
+            start = end;
+        }
+    }
+
+    // ---------------------------------------------------------------- content
+
     private void BuildContent()
     {
-        Heading("ScreenCap 使用說明", 24, top: 0);
+        Section("快速開始", "");
         Paragraph("ScreenCap 是常駐在系統匣的截圖工具，可以框選螢幕區域、加上標註，再複製、存檔或貼到桌面上。");
-
-        Section("快速開始");
         Shortcuts(
             ("F1", "開始截圖"),
             ("拖曳滑鼠", "框選要截取的範圍"),
@@ -60,7 +330,7 @@ internal sealed class HelpWindow : Window
             ("Ctrl + Alt + F2", "截圖辨識 QR Code：框選後直接把 QR Code 或條碼的內容複製到剪貼簿"));
         Paragraph("以上是預設熱鍵，可以在系統匣選單的「設定」中更改。");
 
-        Section("選取區域");
+        Section("選取區域", "");
         Paragraph("按下 F1 後畫面會凍結並變暗。移動滑鼠時會自動框出游標下的視窗或控制項，單擊即可採用；也可以直接拖曳出自訂範圍。");
         Shortcuts(
             ("單擊", "採用自動偵測到的視窗範圍"),
@@ -80,7 +350,7 @@ internal sealed class HelpWindow : Window
         Paragraph("選取前游標旁會顯示放大鏡，標示目前的螢幕座標與 HEX / RGB 色值，方便精準對齊；亮起的那個是按 C 會複製的格式。");
         Paragraph("要截下拉選單或滑鼠移上去才出現的提示，可以從系統匣選單的「延遲截圖」選擇 3、5 或 10 秒，先把選單打開，倒數結束後就會開始截圖。倒數時右下角會顯示秒數，點一下即可取消。若要把滑鼠游標也截進去，請在「設定」中勾選「截圖時包含滑鼠游標」。");
 
-        Section("標註工具");
+        Section("標註工具", "");
         Paragraph("選好範圍後，下方會出現工具列。點選工具後，可以在第二列用滑桿調整粗細（文字與序號為大小），並選擇顏色；每種工具各自記住自己的粗細。滑桿旁的數字可以直接點一下輸入數值，按 Enter 套用、Esc 取消，↑ / ↓ 微調。再點一次同一個工具即可取消。");
         Paragraph("除了 14 種預設顏色，點第二列最右邊的調色盤按鈕可以自訂顏色：在色塊中拖曳選擇飽和度與亮度、右側長條選色相，或直接輸入 HEX 色碼後按 Enter。自訂過的顏色會記在「最近使用」中，下次截圖也能直接選。");
         Shortcuts(
@@ -124,7 +394,7 @@ internal sealed class HelpWindow : Window
 
         Paragraph("截圖完成後，按 Ctrl + Shift + F1 或從系統匣選單選「再次開啟上一張截圖」，會回到上一次的畫面與選取範圍，標註也都還能移動、修改或刪除，適合補上漏掉的標註後重新複製或存檔。");
 
-        Section("輸出");
+        Section("輸出", "");
         Shortcuts(
             ("Enter / 雙擊選區", "預設動作：複製到剪貼簿；可在「設定」中改成快速存檔、另存新檔或貼到桌面"),
             ("Ctrl + C", "複製到剪貼簿"),
@@ -137,7 +407,7 @@ internal sealed class HelpWindow : Window
         Paragraph("這些功能也可以從工具列右側的按鈕使用。標註會一起合成到輸出的圖片中。");
         Paragraph("存檔的預設檔名可以在「設定」的「檔名格式」中自訂：{date} 日期、{time} 時間、{title} 截圖的視窗標題、{n} 流水號（001、002…），也可以用 {yyyy-MM-dd} 這類日期格式。例如「{title}_{n}」會存成「記事本_001.png」。設定中也可以勾選存檔後複製檔案路徑，或在檔案總管中顯示存好的檔案。");
 
-        Section("貼圖");
+        Section("貼圖", "");
         Paragraph("貼圖會固定在所有視窗的最上層，適合拿來對照資料或暫存畫面。截圖時按 Ctrl + T，或按 F3 貼上剪貼簿中的圖片。剪貼簿中是文字時，F3 會把文字貼成一張便條；是色碼（例如 #1E88E5 或 rgb(30, 136, 229)）時則貼成該顏色的色塊。");
         Shortcuts(
             ("拖曳", "移動貼圖"),
@@ -157,7 +427,7 @@ internal sealed class HelpWindow : Window
             ("右鍵", "開啟選單"));
         Paragraph("系統匣選單可以一次隱藏或顯示所有貼圖，也能還原最近關閉的貼圖（最多 20 張，會回到原本的位置、大小與透明度）。");
 
-        Section("錄製螢幕");
+        Section("錄製螢幕", "");
         Paragraph("可以把螢幕上的任一區域錄成 GIF 動畫或 MP4 影片，滑鼠游標也會一起錄進去。");
         Shortcuts(
             ("Shift + F1", "框選要錄製的範圍（與截圖相同，可自動偵測視窗）"),
@@ -176,7 +446,7 @@ internal sealed class HelpWindow : Window
             "MP4：每秒 30 格的 H.264 影片，動作流暢、檔案小，適合較長或畫面變化大的錄製；可以錄進聲音（AAC）");
         Paragraph("聲音只能錄進 MP4，GIF 沒有聲音。系統聲音與麥克風可以同時開啟，會混成同一條音軌；錄的是 Windows 目前的預設播放與錄音裝置。沒有麥克風，或 Windows 隱私權設定不允許桌面應用程式使用麥克風時，錄影仍會開始，只是不含麥克風的聲音。");
 
-        Section("系統匣");
+        Section("系統匣", "");
         Paragraph("左鍵點系統匣圖示可直接截圖；右鍵開啟選單：");
         Bullets(
             "截圖、延遲截圖（3 / 5 / 10 秒）、再次開啟上一張截圖、截圖歷史庫、截圖辨識文字、截圖辨識 QR Code、錄製螢幕（錄製中顯示為「停止錄製」與「暫停錄製」）",
@@ -188,11 +458,11 @@ internal sealed class HelpWindow : Window
             "檢查更新：到 GitHub 查看是否有新版本",
             "結束：關閉 ScreenCap（所有貼圖也會一併關閉）");
 
-        Section("更新");
+        Section("更新", "");
         Paragraph("ScreenCap 會在啟動後與之後每天檢查一次 GitHub 上有沒有新版本（可在「設定」中關閉），有新版時會跳出通知，點通知即可查看更新內容。按「立即更新」會下載新版、確認檔案完整後取代原本的 ScreenCap.exe 並重新啟動，設定都會保留；目前開著的貼圖會關閉，錄影中則無法更新。不想更新到某個版本時可以按「略過這個版本」，之後只有手動檢查才會再出現。");
         Paragraph("ScreenCap.exe 放在需要系統管理員權限的資料夾（例如 Program Files）時無法自動更新，請改放到一般資料夾，或從下載頁面手動更新。");
 
-        Section("長截圖");
+        Section("長截圖", "");
         Paragraph("適合截取超過一個畫面的網頁、文件或聊天紀錄。框選要捲動的內容區域（例如網頁的內文），點工具列的長截圖按鈕，ScreenCap 會把游標移到區域中央，用滑鼠滾輪自動往下捲，並把每次新出現的部分接到底下。");
         Bullets(
             "捲到底、按狀態列的「完成」或達到 30,000 像素時停止；按「取消」則捨棄",
@@ -201,7 +471,7 @@ internal sealed class HelpWindow : Window
             "完成後可在預覽視窗中複製、另存或做文字辨識",
             "捲動過程中請不要移動滑鼠或操作視窗；若內容在捲動時改變（動畫、影片、自動載入），可能會提早停止");
 
-        Section("截圖歷史庫");
+        Section("截圖歷史庫", "");
         Paragraph("複製、存檔或貼到桌面的截圖（包含長截圖）都會自動保留一份，按 Ctrl + Shift + F2 或從系統匣選單選「截圖歷史庫」即可瀏覽，最新的排在最前面。只做文字或 QR Code 辨識的範圍不會保留。");
         Shortcuts(
             ("雙擊 / Enter", "貼到桌面"),
@@ -215,15 +485,15 @@ internal sealed class HelpWindow : Window
         Paragraph("搜尋框可以找視窗標題，也能找截圖裡的文字，例如錯誤訊息的一部分。文字由 Windows 內建的 OCR 在背景辨識，不需要連網；剛截的圖要等幾秒才找得到，第一次使用時舊的截圖也會在背景補辨識。輸入多個詞時，每個詞都要出現才算符合；中文字之間的空格不影響比對。");
         Paragraph("預設保留最近 100 張，超過時自動刪除最舊的，可在「設定」中改成 20 到 500 張或不保留。截圖存在 %LocalAppData%\\ScreenCap\\History，只留在這台電腦上；已另存的檔案不受歷史庫影響。");
 
-        Section("文字辨識");
+        Section("文字辨識", "");
         Paragraph("截圖時點工具列的文字辨識按鈕，或在貼圖上按 O，會開啟辨識結果視窗。辨識使用 Windows 內建的 OCR，不需要連網；結果可以直接修改，按「複製」或 Ctrl + Enter 複製並關閉。中英文混合時建議選「中文」，可在視窗上方切換辨識語言。");
         Paragraph("只想要文字時，按 Ctrl + Alt + F1 後框選範圍或點選視窗，放開滑鼠就會直接辨識並複製到剪貼簿，不用經過編輯器與結果視窗。右下角的通知會顯示複製了什麼，點通知可以開啟結果視窗修改或換辨識語言。");
 
-        Section("QR Code 與條碼");
+        Section("QR Code 與條碼", "");
         Paragraph("截圖時點工具列的 QR Code 按鈕，或在貼圖上按 Q，會列出範圍內所有的 QR Code 與條碼（EAN、UPC、Code 128、Code 39、Data Matrix、PDF417、Aztec），可以個別複製；內容是網址時還能按「開啟」用瀏覽器開啟。深色背景上的淺色 QR Code 與很小的 QR Code 也能辨識。");
         Paragraph("按 Ctrl + Alt + F2 後框選範圍或點選視窗，放開滑鼠就會直接把內容複製到剪貼簿。只找到一個網址時，點通知就會用瀏覽器開啟；其他情況點通知會開啟結果視窗。");
 
-        Section("常見問題");
+        Section("常見問題", "");
         Question("錄出來的 GIF 檔案很大？",
             "GIF 只會記錄每格有變化的部分。錄製影片、捲動網頁等整個畫面都在變動的內容時檔案會比較大，可以改用 MP4 或縮小錄製範圍。");
         Question("文字辨識的語言清單是空的，或辨識不出中文？",
@@ -236,53 +506,78 @@ internal sealed class HelpWindow : Window
             "ScreenCap 同一時間只會執行一份，重複開啟時新的會直接結束。");
     }
 
-    // ---------------------------------------------------------------- builders
+    // ---------------------------------------------------------------- content builders (used by BuildContent)
 
-    private void Heading(string text, double size, double top) =>
-        _body.Children.Add(new TextBlock
-        {
-            Text = text,
-            FontSize = size,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, top, 0, 8),
-        });
+    private Topic Current => _topics[^1];
 
-    private void Section(string title)
-    {
-        Heading(title, 18, top: 20);
-        _body.Children.Add(new Border { Height = 3, Width = 32, CornerRadius = new CornerRadius(1.5), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, -4, 0, 10) }
-            .Themed(Border.BackgroundProperty, "Brush.Accent"));
-    }
+    private void Section(string title, string glyph) => _topics.Add(new Topic(title, glyph));
 
-    private void Paragraph(string text) =>
-        _body.Children.Add(new TextBlock
-        {
-            Text = text,
-            TextWrapping = TextWrapping.Wrap,
-            LineHeight = 22,
-            Margin = new Thickness(0, 0, 0, 10),
-        }.Themed(TextBlock.ForegroundProperty, "Brush.Muted"));
+    private void Paragraph(string text) => Current.Blocks.Add(new ParagraphBlock(text));
 
     private void Bullets(params string[] items)
     {
         foreach (var item in items)
+            Current.Blocks.Add(new BulletBlock(item));
+    }
+
+    private void Question(string question, string answer) => Current.Blocks.Add(new QuestionBlock(question, answer));
+
+    private void Shortcuts(params (string Key, string Description)[] rows) => Current.Blocks.Add(new ShortcutsBlock(rows));
+
+    // ---------------------------------------------------------------- rendering
+
+    private TextBlock Heading(string text, double size, double top)
+    {
+        var heading = new TextBlock
         {
-            var text = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(12, 0, 0, 6) }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
-            var bullet = new Run("•  ");
-            bullet.SetResourceReference(TextElement.ForegroundProperty, "Brush.Accent");
-            text.Inlines.Add(bullet);
-            text.Inlines.Add(new Run(item));
-            _body.Children.Add(text);
+            Text = text,
+            FontSize = size,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, top, 0, 4),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        _body.Children.Add(heading);
+        _body.Children.Add(new Border { Height = 3, Width = 32, CornerRadius = new CornerRadius(1.5), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 12) }
+            .Themed(Border.BackgroundProperty, "Brush.Accent"));
+        return heading;
+    }
+
+    /// <param name="terms">Search terms to highlight; empty when showing a topic.</param>
+    private void Render(Block block, Regex[] terms)
+    {
+        switch (block)
+        {
+            case ParagraphBlock p:
+                _body.Children.Add(Text(p.Text, terms, new Thickness(0, 0, 0, 10)).Themed(TextBlock.ForegroundProperty, "Brush.Muted"));
+                break;
+            case BulletBlock b:
+                var item = new TextBlock { TextWrapping = TextWrapping.Wrap, LineHeight = 22, Margin = new Thickness(12, 0, 0, 6) }.Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+                var bullet = new Run("•  ");
+                bullet.SetResourceReference(TextElement.ForegroundProperty, "Brush.Accent");
+                item.Inlines.Add(bullet);
+                AddHighlighted(item.Inlines, b.Text, terms);
+                _body.Children.Add(item);
+                break;
+            case QuestionBlock q:
+                var question = Text(q.Question, terms, new Thickness(0, 4, 0, 4));
+                question.FontWeight = FontWeights.SemiBold;
+                _body.Children.Add(question);
+                _body.Children.Add(Text(q.Answer, terms, new Thickness(0, 0, 0, 10)).Themed(TextBlock.ForegroundProperty, "Brush.Muted"));
+                break;
+            case ShortcutsBlock s:
+                RenderShortcuts(s.Rows, terms);
+                break;
         }
     }
 
-    private void Question(string question, string answer)
+    private static TextBlock Text(string text, Regex[] terms, Thickness margin)
     {
-        _body.Children.Add(new TextBlock { Text = question, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 4) });
-        Paragraph(answer);
+        var block = new TextBlock { TextWrapping = TextWrapping.Wrap, LineHeight = 22, Margin = margin };
+        AddHighlighted(block.Inlines, text, terms);
+        return block;
     }
 
-    private void Shortcuts(params (string Key, string Description)[] rows)
+    private void RenderShortcuts((string Key, string Description)[] rows, Regex[] terms)
     {
         var grid = new Grid { Margin = new Thickness(0, 0, 0, 12) };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
@@ -293,6 +588,8 @@ internal sealed class HelpWindow : Window
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var line = new Thickness(0, 0, 0, i == rows.Length - 1 ? 0 : 1);
 
+            var keyText = new TextBlock { FontSize = 13, TextWrapping = TextWrapping.Wrap };
+            AddHighlighted(keyText.Inlines, rows[i].Key, terms);
             var key = new Border
             {
                 CornerRadius = new CornerRadius(4),
@@ -300,13 +597,13 @@ internal sealed class HelpWindow : Window
                 Margin = new Thickness(0, 6, 12, 6),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Top,
-                Child = new TextBlock { Text = rows[i].Key, FontSize = 13 },
+                Child = keyText,
             }.Themed(Border.BackgroundProperty, "Brush.Card");
             var keyCell = new Border { BorderThickness = line, Child = key }.Themed(Border.BorderBrushProperty, "Brush.Border");
             var description = new Border
             {
                 BorderThickness = line,
-                Child = new TextBlock { Text = rows[i].Description, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 8) },
+                Child = Text(rows[i].Description, terms, new Thickness(0, 8, 0, 8)),
             }.Themed(Border.BorderBrushProperty, "Brush.Border");
 
             Grid.SetRow(keyCell, i);
