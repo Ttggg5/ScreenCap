@@ -56,6 +56,25 @@ internal sealed class WindowDetector
         return null;
     }
 
+    /// <summary>The topmost top-level window under the given point, other than the desktop.</summary>
+    public IntPtr WindowAt(int x, int y)
+    {
+        var p = new Point(x + 0.5, y + 0.5);
+        foreach (var (hwnd, bounds) in _windows)
+        {
+            if (bounds.Contains(p))
+                return IsDesktop(hwnd) ? IntPtr.Zero : hwnd;
+        }
+        return IntPtr.Zero;
+    }
+
+    private static bool IsDesktop(IntPtr hwnd)
+    {
+        var buffer = new char[32];
+        string name = new string(buffer, 0, GetClassName(hwnd, buffer, buffer.Length));
+        return name is "Progman" or "WorkerW";
+    }
+
     /// <summary>Title of the topmost titled window under the center of <paramref name="selection"/>, for file names.</summary>
     public string? TitleAt(Rect selection)
     {

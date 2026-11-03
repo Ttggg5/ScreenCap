@@ -63,4 +63,28 @@ public class OverlayRenderingTests
         Assert.True(Images.Distance(Images.PixelAt(image, 60, 60), Color.FromRgb(0x7F, 0x7F, 0x7F)) < 10); // the old area is dimmed again
         Assert.True(Images.Distance(Images.PixelAt(image, 300, 200), Colors.White) < 10);                 // the new area is not
     });
+
+    [Fact]
+    public void ChoosingAnotherSelection_PutsBackTheScreenWithoutTheCapturedWindow() => Sta.Run(() =>
+    {
+        var original = Images.Snapshot(400, 300, Colors.White);
+        var red = Images.ToBitmap(Images.Solid(100, 100, Colors.Red), 100, 100);
+        var withWindow = original.WithImage(red, 50, 50); // as if the window there was captured with W
+        var overlay = new OverlayWindow(withWindow, WindowDetector.Snapshot(original), OverlayMode.Capture, new Rect(50, 50, 100, 100),
+            original: original);
+        overlay.Show();
+        Pump();
+        Assert.Same(withWindow, overlay.Snapshot);
+
+        typeof(OverlayWindow).GetMethod("ResetSelection", BindingFlags.NonPublic | BindingFlags.Instance)!.Invoke(overlay, null);
+        Pump();
+        var image = Render(overlay, 400, 300);
+        overlay.Close();
+
+        Assert.Same(original, overlay.Snapshot);
+        Assert.Same(original, overlay.OriginalSnapshot);
+        // White, dimmed or not (the selection detected under the real cursor may cover it), but no longer the red window.
+        var pixel = Images.PixelAt(image, 100, 100);
+        Assert.True(pixel.R == pixel.G && pixel.G == pixel.B, $"expected gray or white, got {pixel}");
+    });
 }

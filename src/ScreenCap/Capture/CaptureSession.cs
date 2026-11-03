@@ -32,7 +32,8 @@ internal static class CaptureSession
     private static bool _countingDown;
 
     /// <summary>The last finished capture: its frozen screen, selection and still-editable annotations.</summary>
-    private sealed record LastCapture(ScreenSnapshot Snapshot, WindowDetector Detector, Rect Selection, List<Annotation> Annotations);
+    /// <param name="Original">The frozen screen without a window brought forward with W.</param>
+    private sealed record LastCapture(ScreenSnapshot Snapshot, ScreenSnapshot Original, WindowDetector Detector, Rect Selection, List<Annotation> Annotations);
 
     private static LastCapture? _last;
 
@@ -51,8 +52,8 @@ internal static class CaptureSession
         IsActive = true;
         try
         {
-            Show(new OverlayWindow(last.Snapshot, last.Detector, OverlayMode.Capture, last.Selection, last.Annotations.Select(a => a.Clone())),
-                last.Snapshot, last.Detector);
+            Show(new OverlayWindow(last.Snapshot, last.Detector, OverlayMode.Capture, last.Selection, last.Annotations.Select(a => a.Clone()), last.Original),
+                last.Detector);
         }
         catch
         {
@@ -61,13 +62,13 @@ internal static class CaptureSession
         }
     }
 
-    private static void Show(OverlayWindow overlay, ScreenSnapshot snapshot, WindowDetector detector)
+    private static void Show(OverlayWindow overlay, WindowDetector detector)
     {
         overlay.Closed += (_, _) =>
         {
             IsActive = false;
             if (overlay.Session is { } session)
-                _last = new LastCapture(snapshot, detector, session.Selection, session.Annotations);
+                _last = new LastCapture(overlay.Snapshot, overlay.OriginalSnapshot, detector, session.Selection, session.Annotations);
             HandleResult(overlay.Result);
             MemoryRelease.Schedule(); // the previous capture's screen copy is garbage now
         };
@@ -94,7 +95,7 @@ internal static class CaptureSession
         {
             var snapshot = ScreenCaptureService.CaptureVirtualScreen(AppSettings.CaptureCursor);
             var detector = WindowDetector.Snapshot(snapshot);
-            Show(new OverlayWindow(snapshot, detector, mode), snapshot, detector);
+            Show(new OverlayWindow(snapshot, detector, mode), detector);
         }
         catch
         {

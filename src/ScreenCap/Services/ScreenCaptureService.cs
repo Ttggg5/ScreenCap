@@ -53,6 +53,55 @@ internal sealed class ScreenSnapshot
         return new ScreenSnapshot(Left, Top, Width, Height, pixels, Stride, bitmap);
     }
 
+    /// <summary>
+    /// Returns a copy with a captured window painted over its place on the screen. Outside its rounded
+    /// corners the screen behind it stays, blended at the edge like DWM does.
+    /// </summary>
+    public ScreenSnapshot WithWindow(WindowImage window)
+    {
+        var pixels = (byte[])Pixels.Clone();
+        PaintWindow(pixels, Stride, Width, Height, window.Pixels, window.Bounds.Width, window.Bounds.Height,
+            window.Bounds.X - Left, window.Bounds.Y - Top, window.CornerRadius);
+        var bitmap = BitmapSource.Create(Width, Height, 96, 96, PixelFormats.Bgr32, null, pixels, Stride);
+        bitmap.Freeze();
+        return new ScreenSnapshot(Left, Top, Width, Height, pixels, Stride, bitmap);
+    }
+
+    /// <summary>Paints a w × h BGRX image at (x, y), clipped to the destination, with its corners rounded by <paramref name="radius"/>.</summary>
+    internal static void PaintWindow(byte[] dest, int destStride, int destWidth, int destHeight,
+        byte[] src, int w, int h, int x, int y, double radius)
+    {
+        int x0 = Math.Max(0, -x), y0 = Math.Max(0, -y);
+        int x1 = Math.Min(w, destWidth - x), y1 = Math.Min(h, destHeight - y);
+        for (int sy = y0; sy < y1; sy++)
+        {
+            int srcRow = sy * w * 4, destRow = (sy + y) * destStride + x * 4;
+            for (int sx = x0; sx < x1; sx++)
+            {
+                double coverage = CornerCoverage(sx, sy, w, h, radius);
+                if (coverage <= 0)
+                    continue;
+                int s = srcRow + sx * 4, d = destRow + sx * 4;
+                for (int c = 0; c < 3; c++)
+                    dest[d + c] = coverage >= 1 ? src[s + c] : (byte)Math.Round(src[s + c] * coverage + dest[d + c] * (1 - coverage));
+            }
+        }
+    }
+
+    /// <summary>How much of pixel (x, y) lies inside a w × h rectangle with rounded corners: 0 to 1.</summary>
+    private static double CornerCoverage(int x, int y, int w, int h, double radius)
+    {
+        if (radius <= 0)
+            return 1;
+        // Distance from the pixel center to the center of the corner's circle, when the pixel is in a corner square.
+        double cx = x + 0.5 < radius ? radius - (x + 0.5) : x + 0.5 > w - radius ? x + 0.5 - (w - radius) : 0;
+        double cy = y + 0.5 < radius ? radius - (y + 0.5) : y + 0.5 > h - radius ? y + 0.5 - (h - radius) : 0;
+        if (cx <= 0 || cy <= 0)
+            return 1;
+        double distance = Math.Sqrt(cx * cx + cy * cy);
+        return Math.Clamp(radius - distance + 0.5, 0, 1);
+    }
+
     public BitmapSource Crop(Rect r)
     {
         var rect = new Int32Rect((int)r.X, (int)r.Y, (int)r.Width, (int)r.Height);

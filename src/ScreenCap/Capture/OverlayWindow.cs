@@ -72,10 +72,14 @@ internal sealed class OverlayWindow : Window
     private const double DragThreshold = 3; // physical px
     private static readonly Color Accent = Color.FromRgb(0x1A, 0x9F, 0xFF);
 
-    private readonly ScreenSnapshot _snap;
+    /// <summary>The frozen screen; while a window captured with W is selected, with that window painted in.</summary>
+    private ScreenSnapshot _snap;
+    /// <summary>The frozen screen as it was, which choosing another selection goes back to.</summary>
+    private readonly ScreenSnapshot _original;
     private readonly WindowDetector _detector;
 
     private readonly Canvas _root = new();
+    private readonly Image _background;
     private readonly ScaleTransform _chromeScale = new(1, 1);
     /// <summary>The selection shown undimmed: a box the size of the selection, painted with that part of the screen.</summary>
     private readonly Rectangle _selectedView = new() { IsHitTestVisible = false, Visibility = Visibility.Collapsed };
@@ -134,9 +138,11 @@ internal sealed class OverlayWindow : Window
     private readonly OverlayMode _mode;
 
     /// <param name="annotations">Annotations to start with, when reopening the last capture.</param>
+    /// <param name="original">When reopening a capture of a window taken with W, the screen without that window brought forward.</param>
     public OverlayWindow(ScreenSnapshot snap, WindowDetector detector, OverlayMode mode = OverlayMode.Capture, Rect? initialSelection = null,
-        IEnumerable<Annotation>? annotations = null)
+        IEnumerable<Annotation>? annotations = null, ScreenSnapshot? original = null)
     {
+        _original = original ?? snap;
         if (annotations != null)
             _annotations.Load(annotations);
         _mode = mode;
@@ -166,9 +172,9 @@ internal sealed class OverlayWindow : Window
         // selection moves, so only its old and new area are redrawn. Cutting a hole into a full-screen dim
         // layer, or clipping a full-screen image, would redraw the whole screen on every mouse move, which
         // is slow with software rendering.
-        var background = new Image { Source = snap.Bitmap, Width = snap.Width, Height = snap.Height, Stretch = Stretch.Fill };
-        RenderOptions.SetBitmapScalingMode(background, BitmapScalingMode.NearestNeighbor);
-        _root.Children.Add(background);
+        _background = new Image { Source = snap.Bitmap, Width = snap.Width, Height = snap.Height, Stretch = Stretch.Fill };
+        RenderOptions.SetBitmapScalingMode(_background, BitmapScalingMode.NearestNeighbor);
+        _root.Children.Add(_background);
         _root.Children.Add(new Rectangle
         {
             Width = snap.Width,
@@ -256,6 +262,12 @@ internal sealed class OverlayWindow : Window
     }
 
     public OverlayResult Result { get; private set; } = OverlayResult.Cancelled;
+
+    /// <summary>The frozen screen the result was taken from, with any window captured with W painted in.</summary>
+    public ScreenSnapshot Snapshot => _snap;
+
+    /// <summary>The frozen screen without a window captured with W.</summary>
+    public ScreenSnapshot OriginalSnapshot => _original;
 
     /// <summary>The selection and annotations of a finished capture, so it can be reopened and edited again.</summary>
     public (Rect Selection, List<Annotation> Annotations)? Session { get; private set; }
@@ -885,6 +897,10 @@ internal sealed class OverlayWindow : Window
                 _magnifier.UseRgb = !_magnifier.UseRgb;
                 AppSettings.CopyColorAsRgb = _magnifier.UseRgb;
                 break;
+            case Key.W when !ctrl && _mode is OverlayMode.Capture or OverlayMode.Ocr or OverlayMode.Barcode
+                                  && _state is State.Detecting or State.Selected:
+                CaptureWindowUnderCursor();
+                break;
             case Key.A when ctrl && _mode != OverlayMode.EditPin && _state is State.Detecting or State.Selected:
                 SelectScreen();
                 break;
@@ -964,11 +980,63 @@ internal sealed class OverlayWindow : Window
         if (monitor.IsEmpty)
             monitor = all;
 
+        RestoreSnapshot();
         _sel = _state == State.Selected && _sel == monitor ? all : monitor;
         _state = State.Selected;
         UpdateSelectedCursor(_cursor);
         Refresh();
         FinishQuickSelection();
+    }
+
+    /// <summary>
+    /// Captures the whole window under the cursor, including the parts covered by other windows,
+    /// paints it into the frozen screen and selects it.
+    /// </summary>
+    private void CaptureWindowUnderCursor()
+    {
+        var hwnd = _detector.WindowAt((int)_cursor.X, (int)_cursor.Y);
+        if (hwnd == IntPtr.Zero)
+            return;
+        if (WindowCapture.Capture(hwnd) is not { } window)
+        {
+            Notifier.Show("這個視窗無法單獨截取，請改用一般框選。");
+            return;
+        }
+        var bounds = new Rect(window.Bounds.X - _snap.Left, window.Bounds.Y - _snap.Top, window.Bounds.Width, window.Bounds.Height);
+        bounds.Intersect(new Rect(0, 0, _snap.Width, _snap.Height));
+        if (bounds.IsEmpty || bounds.Width < 1 || bounds.Height < 1)
+            return;
+
+        SetSnapshot(_original.WithWindow(window)); // a window captured before goes back behind the others
+        _historyIndex = -1;
+        _sel = bounds;
+        _state = State.Selected;
+        UpdateSelectedCursor(_cursor);
+        Refresh();
+        FinishQuickSelection();
+    }
+
+    /// <summary>Puts back the screen as it was, when a selection other than a window captured with W is chosen.</summary>
+    private void RestoreSnapshot()
+    {
+        if (_snap != _original)
+            SetSnapshot(_original);
+    }
+
+    private void SetSnapshot(ScreenSnapshot snap)
+    {
+        _snap = snap;
+        _background.Source = snap.Bitmap;
+        _selectedBrush.ImageSource = snap.Bitmap;
+        // Mosaic and magnifier annotations show pixels from the screen; show the new one.
+        foreach (var annotation in _annotations.Items)
+        {
+            if (annotation is MosaicAnnotation mosaic)
+                mosaic.Snapshot = snap;
+            else if (annotation is MagnifierAnnotation magnifier)
+                magnifier.Snapshot = snap;
+        }
+        InvalidateAnnotations();
     }
 
     /// <summary>The action of the text and QR code hotkeys; null in modes where the selection can be edited.</summary>
@@ -1015,6 +1083,7 @@ internal sealed class OverlayWindow : Window
             return; // that region is off-screen now (e.g. a monitor was unplugged)
 
         _historyIndex = index;
+        RestoreSnapshot();
         _sel = rect;
         _state = State.Selected;
         UpdateSelectedCursor(_cursor);
@@ -1059,6 +1128,7 @@ internal sealed class OverlayWindow : Window
         CancelPolyline();
         Select(null);
         _annotations.Clear();
+        RestoreSnapshot();
         InvalidateAnnotations();
         _tool = ToolKind.None;
         _toolbar.ClearTool();
