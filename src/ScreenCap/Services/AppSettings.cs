@@ -253,6 +253,32 @@ internal static class AppSettings
         set => Set("CaptureCursor", value ? "1" : "0");
     }
 
+    /// <summary>Background, margin, corners and shadow put around screenshots when copying, saving or pinning.</summary>
+    public static BeautifyOptions Beautify
+    {
+        get
+        {
+            var d = BeautifyOptions.Default;
+            int Int(string name, int fallback) => int.TryParse(Get(name), out int v) ? v : fallback;
+            return new BeautifyOptions(
+                Get("BeautifyEnabled") == "1",
+                Int("BeautifyBackground", d.Background),
+                Int("BeautifyPadding", d.Padding),
+                Int("BeautifyRadius", d.Radius),
+                Get("BeautifyShadow") is { } shadow ? shadow == "1" : d.Shadow,
+                Int("BeautifyOuterRadius", d.OuterRadius));
+        }
+        set
+        {
+            Set("BeautifyEnabled", value.Enabled ? "1" : "0");
+            Set("BeautifyBackground", value.Background.ToString());
+            Set("BeautifyPadding", value.Padding.ToString());
+            Set("BeautifyRadius", value.Radius.ToString());
+            Set("BeautifyShadow", value.Shadow ? "1" : "0");
+            Set("BeautifyOuterRadius", value.OuterRadius.ToString());
+        }
+    }
+
     /// <summary>Index of the aspect ratio new selections are locked to (R in the capture overlay); 0 is free.</summary>
     public static int SelectionRatio
     {

@@ -312,12 +312,14 @@ internal sealed class OverlayWindow : Window
         foreach (var h in _handles)
             h.StrokeThickness = Math.Max(1, Math.Round(scale));
         _adorner.Scale = scale;
+        _toolbar.BeautifyScale = scale;
         _adorner.InvalidateVisual();
         Refresh();
     }
 
     private void WireToolbar()
     {
+        _toolbar.BeautifyPreviewSource = () => HasSelection ? Compositor.Compose(_snap, _sel, _annotations.Items) : null;
         _toolbar.ToolChanged += tool =>
         {
             CommitText();
@@ -1653,6 +1655,14 @@ internal sealed class OverlayWindow : Window
 
         CommitText();
         var image = Compositor.Compose(_snap, _sel, _annotations.Items);
+        // Screenshots get the background and shadow; text and codes are recognized from the plain selection.
+        if (_toolbar.Beautify is { Enabled: true } beautify && _mode == OverlayMode.Capture
+            && action is OverlayAction.Copy or OverlayAction.Save or OverlayAction.QuickSave or OverlayAction.Pin)
+        {
+            image = Beautifier.Apply(image, beautify, _scale);
+            int pad = Beautifier.PaddingPixels(beautify, _scale);
+            (x, y) = (x - pad, y - pad); // a pin keeps the screenshot itself where it was
+        }
         Result = new OverlayResult(action, image, x, y, Title: title);
         if (_mode == OverlayMode.Capture)
             Session = (_sel, _annotations.Items.Select(a => a.Clone()).ToList());

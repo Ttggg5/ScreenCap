@@ -7,7 +7,26 @@ namespace ScreenCap.Services;
 
 internal static class ClipboardService
 {
-    public static void SetImage(BitmapSource image) => Retry(() => Clipboard.SetImage(image));
+    /// <summary>
+    /// Copies an image. One with transparency also goes on as PNG, which keeps it in apps that read PNG
+    /// (Office, browsers, chat apps); the plain bitmap others read is drawn on white, since they would show black.
+    /// </summary>
+    public static void SetImage(BitmapSource image)
+    {
+        if (!Beautifier.HasTransparency(image))
+        {
+            Retry(() => Clipboard.SetImage(image));
+            return;
+        }
+        var png = new System.IO.MemoryStream();
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(image));
+        encoder.Save(png);
+        var data = new DataObject();
+        data.SetImage(Beautifier.OnWhite(image));
+        data.SetData("PNG", png, false);
+        Retry(() => Clipboard.SetDataObject(data, true));
+    }
 
     public static void SetText(string text) => Retry(() => Clipboard.SetText(text));
 

@@ -37,12 +37,16 @@ internal static class ImageExportService
 
     private static bool Write(BitmapSource image, string path)
     {
-        BitmapEncoder encoder = Path.GetExtension(path).ToLowerInvariant() switch
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        BitmapEncoder encoder = extension switch
         {
             ".jpg" or ".jpeg" => new JpegBitmapEncoder { QualityLevel = 95 },
             ".bmp" => new BmpBitmapEncoder(),
             _ => new PngBitmapEncoder(),
         };
+        // JPG and BMP have no transparency; transparent parts would turn black.
+        if (extension != ".png" && Beautifier.HasTransparency(image))
+            image = Beautifier.OnWhite(image);
         encoder.Frames.Add(BitmapFrame.Create(image));
 
         try

@@ -167,6 +167,74 @@
                         </Grid>
                     </ToggleButton>
                     <Rectangle Style="{StaticResource Divider}" />
+                    <!-- Not a tool: an option for the output, with its settings in a popup. A soft accent background shows it is on. -->
+                    <ToggleButton x:Name="BeautifyToggle" Style="{StaticResource ToolToggle}">
+                        <Grid Width="18" Height="15">
+                            <Rectangle RadiusX="3" RadiusY="3">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                        <GradientStop Color="#667EEA" Offset="0" />
+                                        <GradientStop Color="#F87B7B" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <Rectangle Width="10" Height="7" RadiusX="1.5" RadiusY="1.5" Fill="White" />
+                        </Grid>
+                    </ToggleButton>
+                    <Popup x:Name="BeautifyPopup" PlacementTarget="{Binding ElementName=BeautifyToggle}" Placement="Bottom" VerticalOffset="4"
+                           StaysOpen="False" AllowsTransparency="True" PopupAnimation="Fade"
+                           IsOpen="{Binding IsChecked, ElementName=BeautifyToggle, Mode=TwoWay}" Opened="OnBeautifyPopupOpened">
+                        <Border Background="{DynamicResource Brush.Menu}" BorderBrush="{DynamicResource Brush.Border}" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,8,8">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.25" />
+                            </Border.Effect>
+                            <StackPanel Width="272" TextElement.FontFamily="Microsoft JhengHei UI">
+                                <CheckBox x:Name="BeautifyEnabled" Content="複製、存檔與貼圖時套用美化" Focusable="False" Click="OnBeautifyChanged" />
+                                <TextBlock Text="背景" Style="{StaticResource Label}" Margin="0,10,0,4" />
+                                <WrapPanel x:Name="BeautifyBackgrounds" />
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="60" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="28" />
+                                        <RowDefinition Height="28" />
+                                        <RowDefinition Height="28" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Text="留白" Style="{StaticResource Label}" />
+                                    <Slider x:Name="PaddingSlider" Grid.Column="1" Minimum="0" Maximum="160" SmallChange="4" LargeChange="16" TickFrequency="4"
+                                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnBeautifySliderChanged" />
+                                    <TextBlock x:Name="PaddingValue" Grid.Column="2" Style="{StaticResource Label}" HorizontalAlignment="Right" FontFamily="Consolas" />
+                                    <TextBlock Grid.Row="1" Text="截圖圓角" Style="{StaticResource Label}" />
+                                    <Slider x:Name="RadiusSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="40" SmallChange="1" LargeChange="4" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnBeautifySliderChanged" />
+                                    <TextBlock x:Name="RadiusValue" Grid.Row="1" Grid.Column="2" Style="{StaticResource Label}" HorizontalAlignment="Right" FontFamily="Consolas" />
+                                    <TextBlock x:Name="OuterRadiusLabel" Grid.Row="2" Text="外框圓角" Style="{StaticResource Label}" />
+                                    <Slider x:Name="OuterRadiusSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="80" SmallChange="1" LargeChange="8" TickFrequency="1"
+                                            IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" Focusable="False" VerticalAlignment="Center" ValueChanged="OnBeautifySliderChanged" />
+                                    <TextBlock x:Name="OuterRadiusValue" Grid.Row="2" Grid.Column="2" Style="{StaticResource Label}" HorizontalAlignment="Right" FontFamily="Consolas" />
+                                </Grid>
+                                <CheckBox x:Name="BeautifyShadow" Content="陰影" Focusable="False" Margin="0,6,0,0" Click="OnBeautifyChanged" />
+                                <!-- Checkerboard behind the preview, so a transparent background shows as such -->
+                                <Border Margin="0,10,0,0" Height="150" CornerRadius="4" ClipToBounds="True">
+                                    <Border.Background>
+                                        <DrawingBrush TileMode="Tile" Viewport="0,0,12,12" ViewportUnits="Absolute">
+                                            <DrawingBrush.Drawing>
+                                                <DrawingGroup>
+                                                    <GeometryDrawing Brush="#FFFFFF" Geometry="M0,0 H2 V2 H0 Z" />
+                                                    <GeometryDrawing Brush="#DDDDDD" Geometry="M0,0 H1 V1 H0 Z M1,1 H2 V2 H1 Z" />
+                                                </DrawingGroup>
+                                            </DrawingBrush.Drawing>
+                                        </DrawingBrush>
+                                    </Border.Background>
+                                    <Image x:Name="BeautifyPreview" Stretch="Uniform" Margin="4" />
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </Popup>
+                    <Rectangle Style="{StaticResource Divider}" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="復原 (Ctrl+Z)" Content="&#xE7A7;" Click="OnUndo" />
                     <Button Style="{StaticResource ToolButton}" ToolTip="重做 (Ctrl+Y)" Content="&#xE7A6;" Click="OnRedo" />
                     <Rectangle Style="{StaticResource Divider}" />

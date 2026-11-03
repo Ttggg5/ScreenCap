@@ -79,6 +79,9 @@ internal partial class SelectionToolbar : UserControl
             [OpacitySlider] = () => _opacityGestureStarted = true,
             [SizeSlider] = () => _sizeGestureStarted = true,
             [DimSlider] = () => _dimGestureStarted = true,
+            [PaddingSlider] = () => { },
+            [RadiusSlider] = () => { },
+            [OuterRadiusSlider] = () => { },
         });
         // Typed values apply like a slider change; each is its own undo step.
         LinkNumber(MosaicValue, MosaicSlider, () => _sliderGestureStarted = true);
@@ -99,6 +102,129 @@ internal partial class SelectionToolbar : UserControl
         RecordButton.ToolTip = $"錄製螢幕（{RecordingSession.DisplayName(RecordingSession.Format)}）";
         SetTextStyle(TextStyle.Default with { FontName = AppSettings.TextFont });
         SetStamp(StampLibrary.Find(AppSettings.LastStamp) ?? Stamp.BuiltIn[0]);
+        SetBeautify(AppSettings.Beautify);
+    }
+
+    // ---------------------------------------------------------------- beautify
+
+    private bool _showingBeautify;
+
+    /// <summary>Background, margin, corners and shadow for the output; remembered across captures.</summary>
+    public BeautifyOptions Beautify { get; private set; } = BeautifyOptions.Default;
+
+    /// <summary>The screenshot as it would be output, for the preview in the beautify popup.</summary>
+    public Func<BitmapSource?>? BeautifyPreviewSource { get; set; }
+
+    /// <summary>Display scale, so the preview shows the margin and corners in proportion.</summary>
+    public double BeautifyScale { get; set; } = 1;
+
+    private void SetBeautify(BeautifyOptions options)
+    {
+        Beautify = options;
+        _showingBeautify = true;
+        BeautifyEnabled.IsChecked = options.Enabled;
+        BeautifyShadow.IsChecked = options.Shadow;
+        PaddingSlider.Value = Math.Clamp(options.Padding, 0, BeautifyOptions.MaxPadding);
+        RadiusSlider.Value = Math.Clamp(options.Radius, 0, BeautifyOptions.MaxRadius);
+        OuterRadiusSlider.Value = Math.Clamp(options.OuterRadius, 0, BeautifyOptions.MaxOuterRadius);
+        _showingBeautify = false;
+        PaddingValue.Text = $"{PaddingSlider.Value:0} px";
+        RadiusValue.Text = $"{RadiusSlider.Value:0} px";
+        OuterRadiusValue.Text = $"{OuterRadiusSlider.Value:0} px";
+        // A transparent background has no outer edge to round.
+        bool outerApplies = !BeautifyBackground.FromIndex(options.Background).IsTransparent;
+        OuterRadiusSlider.IsEnabled = outerApplies;
+        OuterRadiusLabel.Opacity = OuterRadiusValue.Opacity = outerApplies ? 1 : 0.4;
+        foreach (var swatch in BeautifyBackgrounds.Children.OfType<ToggleButton>())
+            swatch.IsChecked = (int)swatch.Tag == options.Background;
+        BeautifyToggle.ToolTip = options.Enabled ? "美化：開（加上背景、留白、圓角與陰影）" : "美化：關（加上背景、留白、圓角與陰影）";
+        if (options.Enabled)
+            BeautifyToggle.SetResourceReference(BackgroundProperty, "Brush.AccentSoft");
+        else
+            BeautifyToggle.Background = Brushes.Transparent;
+    }
+
+    private void ChangeBeautify(BeautifyOptions options)
+    {
+        SetBeautify(options);
+        AppSettings.Beautify = options;
+        UpdateBeautifyPreview();
+    }
+
+    private void OnBeautifyPopupOpened(object? sender, EventArgs e)
+    {
+        if (BeautifyBackgrounds.Children.Count == 0)
+        {
+            for (int i = 0; i < BeautifyBackground.All.Length; i++)
+            {
+                var background = BeautifyBackground.All[i];
+                int index = i;
+                var swatch = new ToggleButton
+                {
+                    Style = (Style)FindResource("SizeDot"),
+                    Width = 30,
+                    Height = 30,
+                    Tag = index,
+                    ToolTip = background.Name,
+                    Content = new Border
+                    {
+                        Width = 20,
+                        Height = 20,
+                        CornerRadius = new CornerRadius(4),
+                        BorderBrush = (Brush)FindResource("Brush.Divider"),
+                        BorderThickness = new Thickness(1),
+                        Background = background.IsTransparent ? CheckerBrush() : background.CreateBrush(),
+                    },
+                };
+                // Picking a background means wanting it: turn beautify on too.
+                swatch.Click += (_, _) => ChangeBeautify(Beautify with { Background = index, Enabled = true });
+                BeautifyBackgrounds.Children.Add(swatch);
+            }
+            SetBeautify(Beautify);
+        }
+        UpdateBeautifyPreview();
+    }
+
+    private static Brush CheckerBrush() => new DrawingBrush(new DrawingGroup
+    {
+        Children =
+        {
+            new GeometryDrawing(Brushes.White, null, Geometry.Parse("M0,0 H2 V2 H0 Z")),
+            new GeometryDrawing(new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC)), null, Geometry.Parse("M0,0 H1 V1 H0 Z M1,1 H2 V2 H1 Z")),
+        },
+    })
+    { TileMode = TileMode.Tile, Viewport = new Rect(0, 0, 8, 8), ViewportUnits = BrushMappingMode.Absolute };
+
+    private void OnBeautifyChanged(object sender, RoutedEventArgs e) =>
+        ChangeBeautify(Beautify with { Enabled = BeautifyEnabled.IsChecked == true, Shadow = BeautifyShadow.IsChecked == true });
+
+    private void OnBeautifySliderChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_showingBeautify || !IsInitialized || PaddingValue == null || RadiusValue == null || OuterRadiusValue == null)
+            return;
+        ChangeBeautify(Beautify with
+        {
+            Padding = (int)PaddingSlider.Value,
+            Radius = (int)RadiusSlider.Value,
+            OuterRadius = (int)OuterRadiusSlider.Value,
+        });
+    }
+
+    /// <summary>Shows the screenshot beautified, scaled down first so the shadow blur stays quick.</summary>
+    private void UpdateBeautifyPreview()
+    {
+        if (!BeautifyPopup.IsOpen || BeautifyPreviewSource?.Invoke() is not { } image)
+            return;
+        const double previewWidth = 480; // pixels; shown at about half that, so it stays sharp at 200%
+        double factor = Math.Min(1, previewWidth / Math.Max(image.PixelWidth, image.PixelHeight));
+        BitmapSource small = image;
+        if (factor < 1)
+        {
+            small = new TransformedBitmap(image, new ScaleTransform(factor, factor));
+            small.Freeze();
+        }
+        BeautifyPreview.Source = Beautifier.Apply(small, Beautify with { Enabled = true }, BeautifyScale * factor);
+        BeautifyPreview.Opacity = Beautify.Enabled ? 1 : 0.5;
     }
 
     // ---------------------------------------------------------------- stamps
@@ -426,6 +552,7 @@ internal partial class SelectionToolbar : UserControl
     /// <summary>Editing an existing pin: recording makes no sense there.</summary>
     public void SetEditPinMode()
     {
+        BeautifyToggle.Visibility = Visibility.Collapsed; // the pin is put back where it was, without a margin
         RecordButton.Visibility = Visibility.Collapsed;
         ScrollCaptureButton.Visibility = Visibility.Collapsed;
     }
