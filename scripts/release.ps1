@@ -20,7 +20,9 @@ $tag = "v$Version"
 $number = $Version -replace '-.*$', '' # the exe's version has no prerelease suffix
 $project = 'src/ScreenCap/ScreenCap.csproj'
 
-if (git status --porcelain) { throw 'There are uncommitted changes; commit or stash them first.' }
+$notes = ".github/release-notes/$tag.md"
+# The release notes may be new or edited: they are committed with the release.
+if (git status --porcelain --untracked-files=all | Where-Object { $_.Substring(3) -ne $notes }) { throw 'There are uncommitted changes; commit or stash them first.' }
 if ((git branch --show-current) -ne 'main') { throw 'Releases are made from main.' }
 if (git tag --list $tag) { throw "Tag $tag already exists." }
 
@@ -36,7 +38,6 @@ if ($number -ne $current) {
     git add $project
 }
 
-$notes = ".github/release-notes/$tag.md"
 if (Test-Path $notes) { git add $notes }
 
 git commit --allow-empty -m "Release $Version"
