@@ -293,16 +293,16 @@ internal sealed class SettingsWindow : Window
         if (keys.Distinct().Count() != keys.Count)
         {
             ShowPage(_nav[0].Page);
-            MessageBox.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Dialog.Show(this, "有兩個功能設定了相同的熱鍵，請改用不同的組合。", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         int historyLimit = (int)((ComboBoxItem)_historyLimit.SelectedItem).Tag;
         int kept = ScreenshotHistory.Entries.Count;
         if (historyLimit < kept
-            && MessageBox.Show(this, historyLimit == 0
+            && Dialog.Show(this, historyLimit == 0
                     ? $"不保留截圖歷史會刪除歷史庫中的 {kept} 張截圖。要繼續嗎？"
                     : $"歷史庫中有 {kept} 張截圖，改成保留 {historyLimit} 張會刪除最舊的 {kept - historyLimit} 張。要繼續嗎？",
-                "ScreenCap", MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) != MessageBoxResult.OK)
+                MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) != MessageBoxResult.OK)
             return;
 
         AppSettings.CaptureHotkey = _capture.Hotkey;

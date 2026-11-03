@@ -370,7 +370,7 @@ internal sealed class HistoryWindow : Window
     private void ClearAll()
     {
         int count = ScreenshotHistory.Entries.Count;
-        if (MessageBox.Show(this, $"要刪除歷史庫中全部 {count} 張截圖嗎？已另存的檔案不受影響。", "ScreenCap",
+        if (Dialog.Show(this, $"要刪除歷史庫中全部 {count} 張截圖嗎？已另存的檔案不受影響。",
                 MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.Cancel) == MessageBoxResult.OK)
             ScreenshotHistory.Clear();
     }

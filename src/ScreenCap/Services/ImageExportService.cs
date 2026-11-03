@@ -3,6 +3,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Services;
 
@@ -118,5 +119,5 @@ internal static class ImageExportService
     }
 
     private static void ShowError(Exception ex) =>
-        MessageBox.Show($"無法儲存檔案：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
+        Dialog.Show($"無法儲存檔案：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Error);
 }

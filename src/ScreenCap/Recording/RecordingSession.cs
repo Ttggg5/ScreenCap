@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using ScreenCap.Native;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Recording;
 
@@ -78,7 +79,7 @@ internal static class RecordingSession
                 File.Delete(temp);
             DisposeKeys();
             IsActive = false;
-            MessageBox.Show($"無法開始錄製：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
+            Dialog.Show($"無法開始錄製：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
@@ -175,7 +176,7 @@ internal static class RecordingSession
         try
         {
             if (error != null)
-                MessageBox.Show($"錄製失敗：{error.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dialog.Show($"錄製失敗：{error.Message}", MessageBoxButton.OK, MessageBoxImage.Error);
             else if (save)
             {
                 // The trim window gives back the recording itself, a trimmed copy, or null to discard it.

@@ -27,7 +27,7 @@ internal sealed class RecordingTrimWindow : Window
     private readonly TextBlock _placeholder;
     // Loading and trimming: the step and how far it is, over the preview.
     private readonly Border _status;
-    private readonly ProgressBar _progress = new() { Height = 6, Width = 260, Maximum = 1, Margin = new Thickness(0, 10, 0, 0) };
+    private readonly ProgressBar _progress = new() { Width = 260, Maximum = 1, Margin = new Thickness(0, 10, 0, 0) };
     private readonly TrimBar _bar = new() { Height = 40, IsEnabled = false };
     private readonly TextBlock _info;
     private readonly Button _save, _discard, _play;
@@ -431,7 +431,7 @@ internal sealed class RecordingTrimWindow : Window
             HideProgress();
             if (File.Exists(trimmed))
                 File.Delete(trimmed);
-            MessageBox.Show(this, $"裁剪失敗，將儲存完整的錄影：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Dialog.Show(this, $"裁剪失敗，將儲存完整的錄影：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Warning);
             Finish(_path);
         }
     }
@@ -474,7 +474,7 @@ internal sealed class RecordingTrimWindow : Window
     }
 
     private bool ConfirmDiscard() =>
-        MessageBox.Show(this, "要捨棄這段錄影嗎？捨棄後無法復原。", "ScreenCap", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        Dialog.Show(this, "要捨棄這段錄影嗎？捨棄後無法復原。", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
 
     private void Finish(string? path)
     {

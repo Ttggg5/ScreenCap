@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using ScreenCap.Annotations;
 using ScreenCap.Recording;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Capture;
 
@@ -305,7 +306,7 @@ internal partial class SelectionToolbar : UserControl
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException or UnauthorizedAccessException)
         {
-            MessageBox.Show(Window.GetWindow(this), $"無法讀取這張圖片：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Dialog.Show(Window.GetWindow(this), $"無法讀取這張圖片：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         AddStamp(image);
@@ -317,7 +318,7 @@ internal partial class SelectionToolbar : UserControl
         if (ClipboardService.GetImage() is { } image)
             AddStamp(image);
         else
-            MessageBox.Show(Window.GetWindow(this), "剪貼簿中沒有圖片。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialog.Show(Window.GetWindow(this), "剪貼簿中沒有圖片。", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void AddStamp(BitmapSource image)
@@ -328,7 +329,7 @@ internal partial class SelectionToolbar : UserControl
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(Window.GetWindow(this), $"無法儲存圖章：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Dialog.Show(Window.GetWindow(this), $"無法儲存圖章：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 

@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Threading;
 using ScreenCap.Services;
+using ScreenCap.Theme;
 
 namespace ScreenCap.Update;
 
@@ -43,7 +44,7 @@ internal static class UpdateCheck
         {
             // Offline etc.: an automatic check simply tries again later.
             if (manual)
-                MessageBox.Show($"無法檢查更新：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Dialog.Show($"無法檢查更新：{ex.Message}", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         finally
@@ -54,7 +55,7 @@ internal static class UpdateCheck
         if (update == null)
         {
             if (manual)
-                MessageBox.Show($"目前已是最新版本（{UpdateService.CurrentVersion}）。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Information);
+                Dialog.Show($"目前已是最新版本（{UpdateService.CurrentVersion}）。", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
         if (manual)

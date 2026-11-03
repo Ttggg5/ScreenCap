@@ -14,7 +14,7 @@ internal sealed class UpdateWindow : Window
     private static UpdateWindow? _open;
 
     private readonly UpdateInfo _update;
-    private readonly ProgressBar _progress = new() { Height = 6, Maximum = 1, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+    private readonly ProgressBar _progress = new() { Maximum = 1, Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 10, 0, 0) };
     private readonly Button _install = new() { MinWidth = 90, Margin = new Thickness(8, 0, 0, 0), IsDefault = true };
     private readonly Button _later = new() { Content = "稍後", MinWidth = 90, Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
@@ -141,7 +141,7 @@ internal sealed class UpdateWindow : Window
     {
         if (RecordingSession.IsActive)
         {
-            MessageBox.Show(this, "正在錄製螢幕，請先停止錄製再更新。", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Information);
+            Dialog.Show(this, "正在錄製螢幕，請先停止錄製再更新。", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -165,7 +165,7 @@ internal sealed class UpdateWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this, $"新版已安裝，但無法自動重新啟動（{ex.Message}），請手動開啟 ScreenCap。", "ScreenCap",
+                Dialog.Show(this, $"新版已安裝，但無法自動重新啟動（{ex.Message}），請手動開啟 ScreenCap。",
                     MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             Application.Current.Shutdown();
@@ -179,7 +179,7 @@ internal sealed class UpdateWindow : Window
             _progress.Visibility = Visibility.Collapsed;
             _install.IsEnabled = _skip.IsEnabled = true;
             _status.Text = $"更新失敗：{ex.Message}";
-            if (MessageBox.Show(this, $"更新失敗：{ex.Message}\n\n要開啟下載頁面手動下載嗎？", "ScreenCap",
+            if (Dialog.Show(this, $"更新失敗：{ex.Message}\n\n要開啟下載頁面手動下載嗎？",
                     MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
                 OpenPage();
         }

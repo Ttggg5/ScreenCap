@@ -129,7 +129,7 @@ public partial class App : Application
             _settingsOpen = false;
             var failed = RegisterHotkeys();
             if (failed.Count > 0)
-                MessageBox.Show($"以下熱鍵已被其他程式占用，無法使用：\n{string.Join("\n", failed)}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Dialog.Show($"以下熱鍵已被其他程式占用，無法使用：\n{string.Join("\n", failed)}", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }
 
