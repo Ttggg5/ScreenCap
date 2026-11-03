@@ -11,6 +11,8 @@ internal sealed unsafe class Mp4Reader : IDisposable
 {
     private static readonly Guid MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING = new("fb394f3d-ccf1-42ee-bbb3-f9b845d5681d");
     private static readonly Guid MF_MT_MINIMUM_DISPLAY_APERTURE = new("d7388766-18fe-48c6-a177-ee894867c8c4");
+    private static readonly Guid MF_PD_DURATION = new("6c990d33-bb8e-477a-8598-0d5d96fcd88a");
+    private const uint MediaSource = 0xFFFFFFFF; // MF_SOURCE_READER_MEDIASOURCE
     private static readonly Guid IID_IMF2DBuffer = new("7dc9d5f9-9ed9-44ec-9bbf-0600bb589fbb");
     private const uint FirstVideoStream = 0xFFFFFFFC;
     private const uint FirstAudioStream = 0xFFFFFFFD;
@@ -151,6 +153,20 @@ internal sealed unsafe class Mp4Reader : IDisposable
         finally
         {
             Release(type);
+        }
+    }
+
+    /// <summary>The length the file says it has; zero if it doesn't say.</summary>
+    public TimeSpan Duration
+    {
+        get
+        {
+            var value = stackalloc long[3]; // PROPVARIANT: VT_UI8 (21), then the value at offset 8; needs no clearing
+            var key = MF_PD_DURATION;
+            // GetPresentationAttribute, of the file rather than a stream
+            if (((delegate* unmanaged[Stdcall]<IntPtr, uint, Guid*, long*, int>)Vtbl(_reader)[12])(_reader, MediaSource, &key, value) < 0)
+                return TimeSpan.Zero;
+            return (value[0] & 0xFFFF) == 21 ? TimeSpan.FromTicks(value[1]) : TimeSpan.Zero;
         }
     }
 

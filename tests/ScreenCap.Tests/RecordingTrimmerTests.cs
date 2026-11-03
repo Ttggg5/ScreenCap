@@ -154,6 +154,94 @@ public sealed class RecordingTrimmerTests : IDisposable
     }
 
     [Fact]
+    public void Mp4Reader_KnowsTheDuration()
+    {
+        EncodeMp4();
+        using var reader = Mp4Reader.OpenVideo(_source);
+        Assert.InRange(reader.Duration.TotalSeconds, 2.95, 3.1);
+    }
+
+    [Fact]
+    public void Mp4_Timeline_HasAThumbnailOfEachFrame_WhenThereAreFew()
+    {
+        EncodeMp4();
+        var timeline = RecordingTrimmer.Load(_source, RecordingFormat.Mp4);
+
+        Assert.Equal(90, timeline.Thumbnails.Count);
+        Assert.Equal(TimeSpan.Zero, timeline.Thumbnails[0].Time);
+        foreach (var (seconds, color) in new[] { (0.0, Colors.Red), (1.5, Colors.Lime), (2.99, Colors.Blue) })
+            Assert.True(Images.Distance(color, Images.PixelAt(timeline.ThumbnailAt(TimeSpan.FromSeconds(seconds))!, 160, 120)) < 30, $"{seconds} s");
+    }
+
+    [Fact]
+    public void Mp4_Timeline_SpreadsTheThumbnails_OfALongRecording()
+    {
+        const int fps = 30, seconds = 15;
+        using (var encoder = new Mp4Encoder(_source, 64, 48, fps, audio: false))
+        {
+            for (int i = 0; i < fps * seconds; i++)
+                encoder.AddFrame(Images.Solid(64, 48, i < fps * seconds / 2 ? Colors.Red : Colors.Blue), TimeSpan.FromSeconds((double)i / fps));
+            encoder.Finish(TimeSpan.FromSeconds(seconds));
+        }
+
+        var timeline = RecordingTrimmer.Load(_source, RecordingFormat.Mp4);
+
+        Assert.Equal(fps * seconds, timeline.FrameTimes.Count);
+        Assert.InRange(timeline.Thumbnails.Count, 290, 301); // about one per 1/300 of the recording, not one per frame
+        var thumbTimes = timeline.Thumbnails.Select(t => t.Time).ToList();
+        Assert.Equal(TimeSpan.Zero, thumbTimes[0]);
+        Assert.Equal(thumbTimes.Order(), thumbTimes);
+        double gap = thumbTimes.Zip(thumbTimes.Skip(1), (a, b) => (b - a).TotalSeconds).Max();
+        Assert.InRange(gap, 0, 2.5 * seconds / 300.0); // evenly spread
+        Assert.InRange(timeline.Duration - thumbTimes[^1], TimeSpan.Zero, TimeSpan.FromSeconds(2.0 * seconds / 300)); // up to the end
+        Assert.True(Images.Distance(Colors.Blue, Images.PixelAt(timeline.ThumbnailAt(TimeSpan.FromSeconds(14))!, 32, 24)) < 30);
+    }
+
+    /// <summary>Collects reports as they are made, unlike <see cref="Progress{T}"/>, which posts them.</summary>
+    private sealed class Reports : IProgress<double>
+    {
+        public List<double> Values { get; } = [];
+        public void Report(double value) => Values.Add(value);
+
+        public void AssertRisesToTheEnd()
+        {
+            Assert.True(Values.Count >= 3, $"{Values.Count} reports");
+            Assert.Equal(Values.Order(), Values);
+            Assert.Equal(Values.Distinct(), Values); // only when it moves
+            Assert.Equal(1, Values[^1]);
+            Assert.InRange(Values.Count, 3, 101);
+        }
+    }
+
+    [Fact]
+    public void Mp4_LoadAndTrim_ReportProgress()
+    {
+        EncodeMp4();
+        var loading = new Reports();
+        var times = RecordingTrimmer.Load(_source, RecordingFormat.Mp4, progress: loading).FrameTimes;
+        loading.AssertRisesToTheEnd();
+        Assert.Contains(loading.Values, v => v is > 0.3 and < 0.7); // along the way, not just at the end
+
+        var trimming = new Reports();
+        RecordingTrimmer.Trim(_source, _trimmed, RecordingFormat.Mp4, times[15], times[75], progress: trimming);
+        trimming.AssertRisesToTheEnd();
+        Assert.Contains(trimming.Values, v => v is > 0.3 and < 0.7);
+    }
+
+    [Fact]
+    public void Gif_LoadAndTrim_ReportProgress() => Sta.Run(() =>
+    {
+        EncodeGif();
+        var loading = new Reports();
+        RecordingTrimmer.Load(_source, RecordingFormat.Gif, progress: loading);
+        loading.AssertRisesToTheEnd();
+
+        var trimming = new Reports();
+        RecordingTrimmer.Trim(_source, _trimmed, RecordingFormat.Gif, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4), progress: trimming);
+        trimming.AssertRisesToTheEnd();
+    });
+
+    [Fact]
     public void Mp4_FrameAt_IsTheFullSizeFrameShowingThen()
     {
         EncodeMp4();

@@ -180,7 +180,7 @@ internal static class RecordingSession
             {
                 // The trim window gives back the recording itself, a trimmed copy, or null to discard it.
                 output = AppSettings.TrimAfterRecording ? await RecordingTrimWindow.ShowAsync(temp, _format, Mp4FramesPerSecond) : temp;
-                if (output != null && ImageExportService.SaveRecording(output, _format == RecordingFormat.Mp4, _title) is { } path)
+                if (output != null && await ImageExportService.SaveRecordingAsync(output, _format == RecordingFormat.Mp4, _title) is { } path)
                 {
                     ClipboardService.SetFile(path);
                     Notifier.Show($"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");

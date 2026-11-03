@@ -25,6 +25,9 @@ internal sealed class RecordingTrimWindow : Window
 
     private readonly Image _preview = new() { Stretch = Stretch.Uniform };
     private readonly TextBlock _placeholder;
+    // Loading and trimming: the step and how far it is, over the preview.
+    private readonly Border _status;
+    private readonly ProgressBar _progress = new() { Height = 6, Width = 260, Maximum = 1, Margin = new Thickness(0, 10, 0, 0) };
     private readonly TrimBar _bar = new() { Height = 40, IsEnabled = false };
     private readonly TextBlock _info;
     private readonly Button _save, _discard, _play;
@@ -72,11 +75,24 @@ internal sealed class RecordingTrimWindow : Window
         ThemeManager.Attach(this);
 
         RenderOptions.SetBitmapScalingMode(_preview, BitmapScalingMode.HighQuality);
-        _placeholder = new TextBlock { Text = "正在讀取錄影…", HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center }
-            .Themed(TextBlock.ForegroundProperty, "Brush.Muted");
+        _placeholder = new TextBlock { Text = "正在讀取錄影…", HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 420, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center }
+            .Themed(TextBlock.ForegroundProperty, "Brush.Text");
+        var statusPanel = new StackPanel();
+        statusPanel.Children.Add(_placeholder);
+        statusPanel.Children.Add(_progress);
+        _status = new Border
+        {
+            Child = statusPanel,
+            Padding = new Thickness(20, 14, 20, 16),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        }.Themed(BackgroundProperty, "Brush.Card").Themed(Border.BorderBrushProperty, "Brush.Border");
         var previewGrid = new Grid { Margin = new Thickness(8) };
         previewGrid.Children.Add(_preview);
-        previewGrid.Children.Add(_placeholder);
+        previewGrid.Children.Add(_status);
+        TaskbarItemInfo = new System.Windows.Shell.TaskbarItemInfo();
         var frame = new Border { CornerRadius = new CornerRadius(6), ClipToBounds = true, Child = previewGrid, BorderThickness = new Thickness(1) }
             .Themed(Border.BorderBrushProperty, "Brush.Border")
             .Themed(BackgroundProperty, "Brush.Card");
@@ -159,7 +175,8 @@ internal sealed class RecordingTrimWindow : Window
         try
         {
             var token = _loading.Token;
-            _timeline = await Task.Run(() => RecordingTrimmer.Load(_path, _format, token), token);
+            var progress = ShowProgress("正在讀取錄影…");
+            _timeline = await Task.Run(() => RecordingTrimmer.Load(_path, _format, token, progress), token);
         }
         catch (OperationCanceledException)
         {
@@ -167,6 +184,9 @@ internal sealed class RecordingTrimWindow : Window
         }
         catch (Exception ex)
         {
+            HideProgress();
+            _progress.Visibility = Visibility.Collapsed;
+            _status.Visibility = Visibility.Visible;
             _placeholder.Text = $"無法讀取錄影，只能直接儲存：{ex.Message}";
             return;
         }
@@ -174,7 +194,7 @@ internal sealed class RecordingTrimWindow : Window
         _bounds = [.. _timeline.FrameTimes, _timeline.Duration];
         _start = 0;
         _end = _bounds.Count - 1;
-        _placeholder.Visibility = Visibility.Collapsed;
+        HideProgress();
         _bar.Duration = _timeline.Duration;
         _bar.IsEnabled = _play.IsEnabled = _timeline.FrameTimes.Count > 1;
         ShowRange();
@@ -398,21 +418,53 @@ internal sealed class RecordingTrimWindow : Window
         }
 
         _save.IsEnabled = _discard.IsEnabled = _bar.IsEnabled = _play.IsEnabled = false;
-        _info.Text = "正在裁剪…";
+        var progress = ShowProgress("正在裁剪錄影…");
         string trimmed = Path.Combine(Path.GetDirectoryName(_path)!, Path.GetFileNameWithoutExtension(_path) + "_trimmed" + Path.GetExtension(_path));
         TimeSpan start = Start, end = End;
         try
         {
-            await Task.Run(() => RecordingTrimmer.Trim(_path, trimmed, _format, start, end, _mp4FramesPerSecond));
+            await Task.Run(() => RecordingTrimmer.Trim(_path, trimmed, _format, start, end, _mp4FramesPerSecond, progress));
             Finish(trimmed);
         }
         catch (Exception ex)
         {
+            HideProgress();
             if (File.Exists(trimmed))
                 File.Delete(trimmed);
             MessageBox.Show(this, $"裁剪失敗，將儲存完整的錄影：{ex.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Warning);
             Finish(_path);
         }
+    }
+
+    /// <summary>Shows <paramref name="step"/> over the preview, with the progress reported to the returned object.</summary>
+    private IProgress<double> ShowProgress(string step)
+    {
+        _placeholder.Text = step;
+        _progress.Value = 0;
+        _progress.Visibility = Visibility.Visible;
+        _status.Visibility = Visibility.Visible;
+        TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.Normal;
+        TaskbarItemInfo.ProgressValue = 0;
+        return new UiProgress(Dispatcher, done =>
+        {
+            if (_status.Visibility != Visibility.Visible)
+                return; // a report that arrived after it finished
+            _progress.Value = done;
+            _placeholder.Text = $"{step} {done:P0}";
+            TaskbarItemInfo.ProgressValue = done;
+        });
+    }
+
+    /// <summary>Hands reports from the background to the window's thread.</summary>
+    private sealed class UiProgress(Dispatcher dispatcher, Action<double> show) : IProgress<double>
+    {
+        public void Report(double value) => dispatcher.InvokeAsync(() => show(value));
+    }
+
+    private void HideProgress()
+    {
+        _status.Visibility = Visibility.Collapsed;
+        TaskbarItemInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
     }
 
     private void Discard()

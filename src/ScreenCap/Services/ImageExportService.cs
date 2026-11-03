@@ -62,9 +62,10 @@ internal static class ImageExportService
         }
     }
 
-    /// <summary>Asks where to save a recording (GIF or MP4) and copies it there.</summary>
+    /// <summary>Asks where to save a recording (GIF or MP4) and moves it there.</summary>
+    /// <param name="sourcePath">A temporary file: it is gone once saved.</param>
     /// <returns>The saved path, or null if cancelled or failed.</returns>
-    public static string? SaveRecording(string sourcePath, bool mp4, string? title = null)
+    public static async Task<string?> SaveRecordingAsync(string sourcePath, bool mp4, string? title = null)
     {
         string folder = mp4 ? Environment.GetFolderPath(Environment.SpecialFolder.MyVideos) : AppSettings.SaveFolder;
         string extension = mp4 ? ".mp4" : ".gif";
@@ -81,7 +82,10 @@ internal static class ImageExportService
 
         try
         {
-            File.Copy(sourcePath, dialog.FileName, overwrite: true);
+            // A move is instant on the same drive; to another one (a USB stick, a network share) it is a copy,
+            // which for a long recording takes a while: off the UI thread.
+            string target = dialog.FileName;
+            await Task.Run(() => File.Move(sourcePath, target, overwrite: true));
             // The recording itself goes on the clipboard, so its path isn't copied.
             AfterSave(dialog.FileName, copyPath: false);
             return dialog.FileName;
