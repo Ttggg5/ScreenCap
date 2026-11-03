@@ -95,7 +95,7 @@ public sealed class Mp4EncoderTests : IDisposable
             encoder.Finish(TimeSpan.FromSeconds(seconds));
         }
 
-        var audio = Mp4Reader.ReadAudio(_path);
+        var audio = Mp4Reader.ReadAllAudio(_path);
         Assert.NotNull(audio);
         Assert.InRange(audio.Length / AudioMixer.Channels / (double)AudioMixer.SampleRate, seconds - 0.05, seconds + 0.1);
         Assert.InRange(Rms(audio, 0.05, 0.4), 0, 100);      // silence
@@ -107,7 +107,7 @@ public sealed class Mp4EncoderTests : IDisposable
     public void WithoutAudio_HasNoAudioTrack()
     {
         EncodeMovingBox(320, 240, 5, 30);
-        Assert.Null(Mp4Reader.ReadAudio(_path));
+        Assert.Null(Mp4Reader.ReadAllAudio(_path));
     }
 
     [Theory]

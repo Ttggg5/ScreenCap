@@ -170,21 +170,29 @@ internal static class RecordingSession
         _recorder = null;
         DisposeKeys();
         string temp = _tempPath!;
+        string? output = null;
 
         try
         {
             if (error != null)
                 MessageBox.Show($"錄製失敗：{error.Message}", "ScreenCap", MessageBoxButton.OK, MessageBoxImage.Error);
-            else if (save && ImageExportService.SaveRecording(temp, _format == RecordingFormat.Mp4, _title) is { } path)
+            else if (save)
             {
-                ClipboardService.SetFile(path);
-                Notifier.Show($"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");
+                // The trim window gives back the recording itself, a trimmed copy, or null to discard it.
+                output = AppSettings.TrimAfterRecording ? await RecordingTrimWindow.ShowAsync(temp, _format, Mp4FramesPerSecond) : temp;
+                if (output != null && ImageExportService.SaveRecording(output, _format == RecordingFormat.Mp4, _title) is { } path)
+                {
+                    ClipboardService.SetFile(path);
+                    Notifier.Show($"{DisplayName(_format)} 已儲存並複製到剪貼簿：{Path.GetFileName(path)}");
+                }
             }
         }
         finally
         {
             if (File.Exists(temp))
                 File.Delete(temp);
+            if (output != null && output != temp && File.Exists(output))
+                File.Delete(output);
             IsActive = false;
             MemoryRelease.Schedule(); // frame buffers of the encoder
         }

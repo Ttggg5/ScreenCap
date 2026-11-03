@@ -57,6 +57,12 @@ internal sealed class GifEncoder : IFrameEncoder
         _previous = bgra;
     }
 
+    /// <summary>Writes the pending frame, shown until <paramref name="endTime"/>, without ending the file.</summary>
+    internal void Flush(TimeSpan endTime) => FlushPending(endTime);
+
+    /// <summary>Writes already encoded frames (graphic control extension and image) straight to the output.</summary>
+    internal void WriteRaw(ReadOnlySpan<byte> frames) => _out.Write(frames);
+
     public void Finish(TimeSpan endTime)
     {
         FlushPending(endTime);

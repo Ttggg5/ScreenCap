@@ -195,6 +195,13 @@ internal static class AppSettings
         set => Set("HighlightClicks", value ? "1" : "0");
     }
 
+    /// <summary>Open the trim window after a recording stops, before saving it.</summary>
+    public static bool TrimAfterRecording
+    {
+        get => Get("TrimAfterRecording") != "0";
+        set => Set("TrimAfterRecording", value ? "1" : "0");
+    }
+
     /// <summary>Show the keys pressed (e.g. "Ctrl + C") at the bottom of recordings.</summary>
     public static bool ShowKeystrokes
     {

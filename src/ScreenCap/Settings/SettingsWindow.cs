@@ -27,6 +27,7 @@ internal sealed class SettingsWindow : Window
     private readonly CheckBox _cursor = new() { Content = "截圖時包含滑鼠游標", IsChecked = AppSettings.CaptureCursor, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _clicks = new() { Content = "錄影時標示滑鼠點擊", IsChecked = AppSettings.HighlightClicks, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _keys = new() { Content = "錄影時顯示按下的按鍵（例如 Ctrl + C）", IsChecked = AppSettings.ShowKeystrokes, Margin = new Thickness(0, 8, 0, 0) };
+    private readonly CheckBox _trim = new() { Content = "錄完後先開啟裁剪視窗，剪掉開頭與結尾", IsChecked = AppSettings.TrimAfterRecording, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _hardware = new() { Content = "使用 GPU 加速繪製（重新啟動 ScreenCap 後生效）", IsChecked = AppSettings.HardwareRendering, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _autoUpdate = new() { Content = "自動檢查更新（每天一次）", IsChecked = AppSettings.AutoCheckUpdates, Margin = new Thickness(0, 8, 0, 0) };
     private readonly CheckBox _copyPath = new() { Content = "存檔後複製檔案路徑", IsChecked = AppSettings.CopyPathAfterSave, Margin = new Thickness(0, 6, 0, 0) };
@@ -95,6 +96,7 @@ internal sealed class SettingsWindow : Window
         recording.Children.Add(Hint("錄影的格式與聲音在框選錄影範圍時的工具列上選擇。"));
         recording.Children.Add(_clicks);
         recording.Children.Add(_keys);
+        recording.Children.Add(_trim);
 
         var general = Page("一般");
         general.Children.Add(Row("外觀", _theme));
@@ -271,6 +273,7 @@ internal sealed class SettingsWindow : Window
         _cursor.IsChecked = false;
         _clicks.IsChecked = false;
         _keys.IsChecked = false;
+        _trim.IsChecked = true;
         _autoUpdate.IsChecked = true;
         _hardware.IsChecked = false;
         _copyPath.IsChecked = false;
@@ -309,6 +312,7 @@ internal sealed class SettingsWindow : Window
         AppSettings.CaptureCursor = _cursor.IsChecked == true;
         AppSettings.HighlightClicks = _clicks.IsChecked == true;
         AppSettings.ShowKeystrokes = _keys.IsChecked == true;
+        AppSettings.TrimAfterRecording = _trim.IsChecked == true;
         AppSettings.AutoCheckUpdates = _autoUpdate.IsChecked == true;
         AppSettings.HardwareRendering = _hardware.IsChecked == true;
         AppSettings.CopyPathAfterSave = _copyPath.IsChecked == true;
