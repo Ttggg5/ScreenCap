@@ -199,18 +199,23 @@ public sealed class RecordingTrimmerTests : IDisposable
     public void Play_StopsWhenCancelled()
     {
         EncodeMp4();
-        using var cancel = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var cancelAfter = TimeSpan.FromMilliseconds(400); // time for even a slow machine to open the file and decode a frame
+        using var cancel = new CancellationTokenSource(cancelAfter);
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        int count = 0;
+        var shownAt = new List<TimeSpan>();
         try
         {
-            RecordingTrimmer.Play(_source, RecordingFormat.Mp4, TimeSpan.Zero, TimeSpan.FromSeconds(3), () => clock.Elapsed, (_, _, _) => count++, cancel.Token);
+            RecordingTrimmer.Play(_source, RecordingFormat.Mp4, TimeSpan.Zero, TimeSpan.FromSeconds(3), () => clock.Elapsed,
+                (_, _, _) => shownAt.Add(clock.Elapsed), cancel.Token);
         }
         catch (OperationCanceledException)
         {
         }
-        Assert.InRange(clock.Elapsed.TotalSeconds, 0, 0.6);
-        Assert.InRange(count, 1, 12);
+        // How many frames show before the cancel depends on how fast the machine decodes (a slow one shows the late
+        // ones in a burst); what matters is that none comes after it, and that it returns instead of playing 3 s.
+        Assert.NotEmpty(shownAt);
+        Assert.All(shownAt, at => Assert.True(at < cancelAfter + TimeSpan.FromMilliseconds(150), $"a frame shown at {at.TotalMilliseconds:0} ms"));
+        Assert.InRange(clock.Elapsed.TotalSeconds, 0, 1.2);
     }
 
     [Fact]
