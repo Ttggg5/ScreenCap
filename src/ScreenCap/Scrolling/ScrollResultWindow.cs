@@ -24,7 +24,7 @@ internal sealed class ScrollResultWindow : Window
     {
         _image = image;
         _title = title;
-        _ = ScreenshotHistory.AddAsync(image, title);
+        _ = ScreenshotHistory.AddAsync(image);
         Title = "ScreenCap 長截圖";
         Width = 760;
         Height = 760;

@@ -204,7 +204,7 @@ internal static class CaptureSession
     private static void HandleResult(OverlayResult result)
     {
         if (result.Image != null && KeptActions.Contains(result.Action))
-            _ = ScreenshotHistory.AddAsync(result.Image, result.Title);
+            _ = ScreenshotHistory.AddAsync(result.Image);
         if (result.Action == OverlayAction.Record)
             RecordingSession.Start(new Int32Rect(result.ScreenX, result.ScreenY, result.Width, result.Height), result.Title);
         else if (result.Action == OverlayAction.ScrollCapture)

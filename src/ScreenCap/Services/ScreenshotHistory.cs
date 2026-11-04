@@ -1,19 +1,17 @@
+using System.Globalization;
 using System.IO;
-using System.Text.Json;
 using System.Windows.Media.Imaging;
 
 namespace ScreenCap.Services;
 
 /// <summary>A screenshot kept in the history.</summary>
 /// <param name="File">File name in the history folder.</param>
-/// <param name="Title">Title of the captured window, if known.</param>
 /// <param name="Width">Size in pixels; 0 if unknown.</param>
-/// <param name="Text">Text recognized in it, for searching; null until recognized.</param>
-internal sealed record HistoryEntry(string File, DateTime Time, string? Title, int Width, int Height, string? Text = null);
+internal sealed record HistoryEntry(string File, DateTime Time, int Width, int Height);
 
 /// <summary>
 /// Keeps a copy of every finished screenshot as a PNG in the local app data folder, newest first,
-/// up to <see cref="AppSettings.HistoryLimit"/>. An index file remembers the window titles.
+/// up to <see cref="AppSettings.HistoryLimit"/>. The folder is the whole record: each file is named by its time.
 /// </summary>
 internal static class ScreenshotHistory
 {
@@ -21,7 +19,9 @@ internal static class ScreenshotHistory
     internal static string Folder { get; set; } =
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ScreenCap", "History");
 
-    private const string IndexName = "index.json";
+    private const string TimeFormat = "yyyyMMdd-HHmmss-fff";
+    /// <summary>Kept the window titles in earlier versions; deleted when found.</summary>
+    private const string OldIndexName = "index.json";
     private static readonly Lock Gate = new();
     private static List<HistoryEntry>? _entries;
 
@@ -42,7 +42,7 @@ internal static class ScreenshotHistory
 
     /// <summary>Stores a copy of <paramref name="image"/>; does nothing if the history is turned off.</summary>
     /// <remarks>Never throws: a full disk must not break the capture itself.</remarks>
-    public static Task AddAsync(BitmapSource image, string? title = null)
+    public static Task AddAsync(BitmapSource image)
     {
         if (AppSettings.HistoryLimit <= 0)
             return Task.CompletedTask;
@@ -58,7 +58,7 @@ internal static class ScreenshotHistory
         {
             try
             {
-                Add(frozen, title, time);
+                Add(frozen, time);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -67,7 +67,7 @@ internal static class ScreenshotHistory
         });
     }
 
-    private static void Add(BitmapSource image, string? title, DateTime time)
+    private static void Add(BitmapSource image, DateTime time)
     {
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(image));
@@ -75,134 +75,17 @@ internal static class ScreenshotHistory
         {
             var entries = Load();
             Directory.CreateDirectory(Folder);
-            string name = time.ToString("yyyyMMdd-HHmmss-fff");
+            string name = time.ToString(TimeFormat, CultureInfo.InvariantCulture);
             string file = name + ".png";
             for (int n = 2; File.Exists(Path.Combine(Folder, file)); n++)
                 file = $"{name}-{n}.png";
             using (var stream = File.Create(Path.Combine(Folder, file)))
                 encoder.Save(stream);
-            entries.Insert(0, new HistoryEntry(file, time, string.IsNullOrWhiteSpace(title) ? null : title, image.PixelWidth, image.PixelHeight));
+            entries.Insert(0, new HistoryEntry(file, time, image.PixelWidth, image.PixelHeight));
             TrimLocked(entries, AppSettings.HistoryLimit);
-            SaveIndex(entries);
-        }
-        Changed?.Invoke();
-        _ = IndexTextAsync();
-    }
-
-    // ---------------------------------------------------------------- text search
-
-    private static Task? _indexing;
-
-    /// <summary>True while text is being recognized in screenshots that don't have it yet.</summary>
-    public static bool IsIndexing
-    {
-        get
-        {
-            lock (Gate)
-                return _indexing != null;
-        }
-    }
-
-    /// <summary>Recognizes the text in every screenshot that hasn't been yet, one at a time, in the background.</summary>
-    /// <returns>Completes when no screenshot is left, or when recognition is unavailable.</returns>
-    public static Task IndexTextAsync()
-    {
-        lock (Gate)
-            return _indexing ??= Task.Run(IndexPendingAsync);
-    }
-
-    private static async Task IndexPendingAsync()
-    {
-        Changed?.Invoke(); // IsIndexing turned on
-        try
-        {
-            while (true)
-            {
-                HistoryEntry? next;
-                lock (Gate)
-                {
-                    next = Load().FirstOrDefault(e => e.Text == null);
-                    // Decided under the lock, so a screenshot added meanwhile starts a new run.
-                    if (next == null)
-                    {
-                        _indexing = null;
-                        break;
-                    }
-                }
-                string text;
-                try
-                {
-                    text = await OcrService.RecognizeAsync(LoadImage(next));
-                }
-                catch (InvalidOperationException)
-                {
-                    // No OCR language installed: try again next time.
-                    lock (Gate)
-                        _indexing = null;
-                    break;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or FileFormatException or ArgumentException)
-                {
-                    text = ""; // unreadable file: don't retry it forever
-                }
-                lock (Gate)
-                {
-                    var entries = Load();
-                    int index = entries.FindIndex(e => e.File == next.File);
-                    if (index >= 0)
-                    {
-                        entries[index] = entries[index] with { Text = text };
-                        try
-                        {
-                            SaveIndex(entries);
-                        }
-                        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                        {
-                            // Kept in memory; written with the next change.
-                        }
-                    }
-                }
-            }
-        }
-        catch
-        {
-            lock (Gate)
-                _indexing = null;
-            throw;
         }
         Changed?.Invoke();
     }
-
-    /// <summary>
-    /// True if every word of <paramref name="query"/> appears in the window title or the recognized text.
-    /// Spaces are ignored when comparing, since OCR puts them unreliably between CJK characters.
-    /// </summary>
-    public static bool Matches(HistoryEntry entry, string query)
-    {
-        var words = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0)
-            return true;
-        string haystack = WithoutSpaces($"{entry.Title}\n{entry.Text}");
-        return words.All(w => haystack.Contains(w, StringComparison.CurrentCultureIgnoreCase));
-    }
-
-    /// <summary>The part of the recognized text around the first word of <paramref name="query"/>, on one line.</summary>
-    /// <returns>Null if the text doesn't contain it.</returns>
-    public static string? Snippet(HistoryEntry entry, string query, int length = 40)
-    {
-        var word = query.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-        if (word == null || string.IsNullOrEmpty(entry.Text))
-            return null;
-        string text = string.Join(" ", entry.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        int at = text.IndexOf(word, StringComparison.CurrentCultureIgnoreCase);
-        if (at < 0)
-            return null;
-        int start = Math.Max(0, Math.Min(at - length / 3, text.Length - length));
-        int end = Math.Min(text.Length, start + length);
-        return (start > 0 ? "…" : "") + text[start..end] + (end < text.Length ? "…" : "");
-    }
-
-    private static string WithoutSpaces(string text) => string.Concat(text.Where(c => !char.IsWhiteSpace(c)));
 
     /// <summary>Removes the oldest screenshots beyond the limit, e.g. after lowering it in the settings.</summary>
     public static void Trim()
@@ -212,7 +95,6 @@ internal static class ScreenshotHistory
             var entries = Load();
             if (!TrimLocked(entries, AppSettings.HistoryLimit))
                 return;
-            SaveIndex(entries);
         }
         Changed?.Invoke();
     }
@@ -222,24 +104,9 @@ internal static class ScreenshotHistory
         lock (Gate)
         {
             var entries = Load();
-            // By file: the caller's copy may predate its recognized text.
             if (entries.RemoveAll(e => e.File == entry.File) == 0)
                 return;
-            DeleteFile(entry);
-            SaveIndex(entries);
-        }
-        Changed?.Invoke();
-    }
-
-    public static void Clear()
-    {
-        lock (Gate)
-        {
-            var entries = Load();
-            foreach (var entry in entries)
-                DeleteFile(entry);
-            entries.Clear();
-            SaveIndex(entries);
+            DeleteFile(PathOf(entry));
         }
         Changed?.Invoke();
     }
@@ -274,7 +141,7 @@ internal static class ScreenshotHistory
         return image;
     }
 
-    /// <summary>Forgets the loaded index, so the next access reads the folder again (for tests).</summary>
+    /// <summary>Forgets the loaded list, so the next access reads the folder again (for tests).</summary>
     internal static void Reset()
     {
         lock (Gate)
@@ -285,32 +152,26 @@ internal static class ScreenshotHistory
     {
         if (_entries != null)
             return _entries;
-        List<HistoryEntry>? entries = null;
-        try
-        {
-            entries = JsonSerializer.Deserialize<List<HistoryEntry>>(File.ReadAllText(Path.Combine(Folder, IndexName)));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
-        {
-            // No index yet, or it is damaged: rebuilt from the files below.
-        }
-        entries = entries?.Where(e => File.Exists(Path.Combine(Folder, e.File))).ToList() ?? [];
-        // Pick up PNGs missing from the index, e.g. after a crash while saving it.
+        var entries = new List<HistoryEntry>();
         if (Directory.Exists(Folder))
         {
-            var known = entries.Select(e => e.File).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            DeleteFile(Path.Combine(Folder, OldIndexName));
+            DeleteFile(Path.Combine(Folder, OldIndexName + ".tmp"));
             foreach (var path in Directory.EnumerateFiles(Folder, "*.png"))
-            {
-                if (!known.Contains(Path.GetFileName(path)))
-                    entries.Add(FromFile(path));
-            }
+                entries.Add(FromFile(path));
         }
-        entries.Sort((a, b) => b.Time.CompareTo(a.Time));
+        // At the same time, "name-2.png" was saved after "name.png".
+        entries.Sort((a, b) => a.Time != b.Time ? b.Time.CompareTo(a.Time)
+            : a.File.Length != b.File.Length ? b.File.Length.CompareTo(a.File.Length) : string.CompareOrdinal(b.File, a.File));
         return _entries = entries;
     }
 
     private static HistoryEntry FromFile(string path)
     {
+        string file = Path.GetFileName(path);
+        if (file.Length < TimeFormat.Length || !DateTime.TryParseExact(file[..TimeFormat.Length], TimeFormat,
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var time))
+            time = File.GetLastWriteTime(path); // not named by us
         int width = 0, height = 0;
         try
         {
@@ -322,7 +183,7 @@ internal static class ScreenshotHistory
         {
             // Size stays unknown.
         }
-        return new HistoryEntry(Path.GetFileName(path), File.GetLastWriteTime(path), null, width, height);
+        return new HistoryEntry(file, time, width, height);
     }
 
     /// <returns>True if something was removed.</returns>
@@ -331,30 +192,22 @@ internal static class ScreenshotHistory
         bool removed = false;
         while (entries.Count > Math.Max(limit, 0))
         {
-            DeleteFile(entries[^1]);
+            DeleteFile(PathOf(entries[^1]));
             entries.RemoveAt(entries.Count - 1);
             removed = true;
         }
         return removed;
     }
 
-    private static void DeleteFile(HistoryEntry entry)
+    private static void DeleteFile(string path)
     {
         try
         {
-            File.Delete(PathOf(entry));
+            File.Delete(path);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Left behind; it is picked up again the next time the folder is read.
         }
-    }
-
-    private static void SaveIndex(List<HistoryEntry> entries)
-    {
-        Directory.CreateDirectory(Folder);
-        string path = Path.Combine(Folder, IndexName);
-        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(entries));
-        File.Move(path + ".tmp", path, overwrite: true);
     }
 }
