@@ -14,7 +14,7 @@
     <RootNamespace>ScreenCap</RootNamespace>
     <AssemblyName>ScreenCap</AssemblyName>
     <!-- Compared with the GitHub release tag (v1.2.0) by the self-update. -->
-    <Version>1.3.2</Version>
+    <Version>1.4.0</Version>
     <!-- DPI awareness must stay in app.manifest for WPF; WinForms is only used for the tray icon. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
